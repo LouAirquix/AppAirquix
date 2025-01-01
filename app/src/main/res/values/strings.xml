@@ -1,0 +1,10 @@
+<resources>
+    <string name="app_name">Airquix01</string>
+    <string name="camera_screen">Camera</string>
+    <string name="ai_screen">AI Logs</string>
+    <string name="manual_screen">Manual</string>
+    <string name="other_inputs_screen">Audio</string>
+    <string name="share_csv">Share CSV</string>
+    <string name="delete_csv">Delete CSV</string>
+    <string name="no_logs">No logs</string>
+</resources>
