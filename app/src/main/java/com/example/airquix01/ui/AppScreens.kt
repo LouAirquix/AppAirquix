@@ -20,7 +20,7 @@ fun AppScreens(viewModel: MainViewModel) {
         },
         content = { innerPadding ->
             Column(Modifier.fillMaxSize().padding(innerPadding)) {
-                TabRow(selectedTabIndex = selectedTab) {
+                ScrollableTabRow(selectedTabIndex = selectedTab) {
                     tabs.forEachIndexed { index, title ->
                         Tab(
                             text = { Text(title) },
