@@ -1,13 +1,16 @@
 package com.example.airquix01
 
-import androidx.compose.runtime.mutableStateOf
-import androidx.lifecycle.ViewModel
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.ViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 
 data class CustomEnv(val name: String, val category: String)
 
 class MainViewModel : ViewModel() {
+    // Bestehende Variablen
     val predefinedEnvironments = listOf("Inside", "Outside")
     var customEnvironments by mutableStateOf(listOf<CustomEnv>())
     var currentManualEnvironment by mutableStateOf<String?>(null)
@@ -18,6 +21,13 @@ class MainViewModel : ViewModel() {
     var aiMismatchEnabled = mutableStateOf(true)
 
     var lastLogTime = 0L
+
+    // Neue Variablen für Aktivitätserkennung mit StateFlow
+    private val _currentActivity = MutableStateFlow("Keine Aktivität erkannt")
+    val currentActivity: StateFlow<String> = _currentActivity
+
+    private val _activityConfidence = MutableStateFlow(0)
+    val activityConfidence: StateFlow<Int> = _activityConfidence
 
     fun addCustomEnvironment(env: String, category: String) {
         customEnvironments = customEnvironments + CustomEnv(env, category)
@@ -42,5 +52,11 @@ class MainViewModel : ViewModel() {
         }
         if (predefinedEnvironments.contains(env)) return env
         return null
+    }
+
+    // Neue Methode zur Aktualisierung der Aktivitätsdaten
+    fun updateActivityData(activity: String, confidence: Int) {
+        _currentActivity.value = activity
+        _activityConfidence.value = confidence
     }
 }

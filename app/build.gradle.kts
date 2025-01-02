@@ -46,6 +46,19 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
 
+    // Google Play Services für Aktivitätserkennung
+    implementation("com.google.android.gms:play-services-location:21.0.1")
+
+    // Hinzufügen der LocalBroadcastManager-Bibliothek
+    implementation("androidx.localbroadcastmanager:localbroadcastmanager:1.1.0")
+
+    implementation("com.google.android.gms:play-services-location:21.0.1")
+
+    // LocalBroadcastManager-Bibliothek hinzufügen
+    implementation(libs.androidx.localbroadcastmanager)
+
+    implementation("com.google.android.gms:play-services-location:21.0.1")
+
     // Compose
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.ui)
