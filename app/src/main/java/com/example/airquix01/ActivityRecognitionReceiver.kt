@@ -18,7 +18,7 @@ class ActivityRecognitionReceiver : BroadcastReceiver() {
             mostProbableActivity?.let { activity ->
                 // Aktualisiere das ViewModel
                 val application = context.applicationContext as AirquixApplication
-                val viewModel = application.getViewModel()
+                val viewModel = application.getMainViewModel()
                 viewModel.updateDetectedActivity(activity.type, activity.confidence)
             }
         }
