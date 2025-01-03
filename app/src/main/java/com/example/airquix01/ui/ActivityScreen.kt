@@ -11,22 +11,27 @@ import androidx.compose.ui.platform.LocalContext
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
+import android.util.Log
 import android.widget.Toast
 import androidx.core.content.ContextCompat
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.lifecycle.viewmodel.compose.viewModel
 
 // Wichtig: Importiere getValue und setValue für die Delegation
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
+import com.example.airquix01.AirquixApplication
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ActivityScreen(mainViewModel: MainViewModel = viewModel()) {
+fun ActivityScreen(viewModel: MainViewModel) {
     val context = LocalContext.current
-    // Speichere den aktuellen Wert in einer lokalen Variable
+    val airquixApplication = context.applicationContext as AirquixApplication
+    val mainViewModel = airquixApplication.getMainViewModel()
     val detectedActivityData = mainViewModel.detectedActivity.value
+
+    // Log detectedActivityData
+    LaunchedEffect(detectedActivityData) {
+        Log.d("ActivityScreen", "detectedActivityData: $detectedActivityData")
+    }
 
     // Berechtigungs-Launcher
     val activityRecognitionPermissionLauncher = rememberLauncherForActivityResult(
