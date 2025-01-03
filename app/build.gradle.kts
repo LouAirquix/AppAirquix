@@ -10,7 +10,7 @@ android {
 
     defaultConfig {
         applicationId = "com.example.airquix01"
-        minSdk = 21
+        minSdk = 26
         targetSdk = 34
         versionCode = 1
         versionName = "1.0"
@@ -72,11 +72,17 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-service:2.6.2")
 
     // Activity Recognition
-    implementation("com.google.android.gms:play-services-location:18.0.0")
+    implementation("com.google.android.gms:play-services-location:21.3.0")
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
+
+    // Jetpack Compose
+    implementation("androidx.compose.ui:ui:1.5.0") // Verwende die neueste Version
+    implementation("androidx.compose.material3:material3:1.1.0") // Verwende die neueste Version
+
+    // Google Play Services für Activity Recogniti
 }
