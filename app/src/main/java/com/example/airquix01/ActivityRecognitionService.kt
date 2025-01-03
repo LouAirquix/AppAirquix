@@ -6,12 +6,14 @@ import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleService
 import com.google.android.gms.location.ActivityRecognition
 import com.google.android.gms.location.ActivityRecognitionClient
-import com.google.android.gms.location.DetectedActivity
+import android.Manifest
+import android.content.pm.PackageManager
 
 class ActivityRecognitionService : LifecycleService() {
 
@@ -50,6 +52,13 @@ class ActivityRecognitionService : LifecycleService() {
     }
 
     private fun requestActivityUpdates() {
+        // Überprüfe die Berechtigung vor der Anforderung
+        if (!checkActivityRecognitionPermission()) {
+            // Berechtigung nicht erteilt, Service beenden
+            stopSelf()
+            return
+        }
+
         val intent = Intent(this, ActivityRecognitionReceiver::class.java)
         val pendingIntent = android.app.PendingIntent.getBroadcast(
             this,
@@ -61,26 +70,45 @@ class ActivityRecognitionService : LifecycleService() {
                 android.app.PendingIntent.FLAG_UPDATE_CURRENT
         )
 
-        // Anfrage für Updates alle 5 Minuten (300000 ms)
+        // Anfrage für Updates alle 10 Sekunden (für schnellere Tests)
         activityRecognitionClient.requestActivityUpdates(
-            300000,
+            10000, // 10 Sekunden
             pendingIntent
         )
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        activityRecognitionClient.removeActivityUpdates(
-            android.app.PendingIntent.getBroadcast(
-                this,
-                0,
-                Intent(this, ActivityRecognitionReceiver::class.java),
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
-                    android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_MUTABLE
-                else
-                    android.app.PendingIntent.FLAG_UPDATE_CURRENT
+        if (checkActivityRecognitionPermission()) {
+            activityRecognitionClient.removeActivityUpdates(
+                android.app.PendingIntent.getBroadcast(
+                    this,
+                    0,
+                    Intent(this, ActivityRecognitionReceiver::class.java),
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
+                        android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_MUTABLE
+                    else
+                        android.app.PendingIntent.FLAG_UPDATE_CURRENT
+                )
             )
-        )
+        } else {
+            Log.w("ActivityRecognitionService", "ACTIVITY_RECOGNITION permission not granted. Skipping removeActivityUpdates.")
+        }
+    }
+
+    private fun checkActivityRecognitionPermission(): Boolean {
+        return ContextCompat.checkSelfPermission(
+            this,
+            getActivityRecognitionPermission()
+        ) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun getActivityRecognitionPermission(): String {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            Manifest.permission.ACTIVITY_RECOGNITION
+        } else {
+            Manifest.permission.ACCESS_FINE_LOCATION
+        }
     }
 
     companion object {

@@ -17,7 +17,6 @@ class AirquixApplication : Application(), ViewModelStoreOwner {
     override val viewModelStore: ViewModelStore
         get() = appViewModelStore
 
-    // Umbenannte Methode zur Vermeidung des Konflikts
     fun getMainViewModel(): MainViewModel {
         return viewModel
     }

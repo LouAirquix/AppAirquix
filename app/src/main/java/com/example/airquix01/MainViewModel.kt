@@ -1,12 +1,13 @@
 package com.example.airquix01
 
+import android.util.Log
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import com.google.android.gms.location.DetectedActivity
 
-data class CustomEnv(val name: String, val category: String)
 data class DetectedActivityData(val activityType: String, val confidence: Int)
 
 class MainViewModel : ViewModel() {
@@ -21,8 +22,9 @@ class MainViewModel : ViewModel() {
 
     var lastLogTime = 0L
 
-    // Neue State-Variablen für Activity Recognition
-    var detectedActivity by mutableStateOf<DetectedActivityData?>(null)
+    // Private MutableState für Activity Recognition
+    private val _detectedActivity = mutableStateOf<DetectedActivityData?>(null)
+    val detectedActivity: State<DetectedActivityData?> get() = _detectedActivity
 
     fun addCustomEnvironment(env: String, category: String) {
         customEnvironments = customEnvironments + CustomEnv(env, category)
@@ -34,7 +36,7 @@ class MainViewModel : ViewModel() {
 
     fun shouldLog(): Boolean {
         val now = System.currentTimeMillis()
-        if (now - lastLogTime >= 10_000) {
+        if (now - lastLogTime >= 10000) { // 10 Sekunden für Testzwecke
             lastLogTime = now
             return true
         }
@@ -49,7 +51,7 @@ class MainViewModel : ViewModel() {
         return null
     }
 
-    // Neue Funktion zur Aktualisierung der erkannten Aktivität
+    // Funktion zur Aktualisierung der erkannten Aktivität
     fun updateDetectedActivity(activityType: Int, confidence: Int) {
         val typeString = when (activityType) {
             DetectedActivity.IN_VEHICLE -> "In Vehicle"
@@ -61,6 +63,7 @@ class MainViewModel : ViewModel() {
             DetectedActivity.UNKNOWN -> "Unknown"
             else -> "Unknown"
         }
-        detectedActivity = DetectedActivityData(typeString, confidence)
+        _detectedActivity.value = DetectedActivityData(typeString, confidence)
+        Log.d("MainViewModel", "Detected Activity: $typeString with confidence $confidence%")
     }
 }

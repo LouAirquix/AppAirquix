@@ -7,22 +7,26 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.example.airquix01.MainViewModel
 import com.example.airquix01.ActivityRecognitionService
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
+import android.Manifest
+import android.content.pm.PackageManager
 import android.os.Build
 import android.widget.Toast
 import androidx.core.content.ContextCompat
-import android.Manifest
-import android.content.pm.PackageManager
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.lifecycle.viewmodel.compose.viewModel
+
+// Wichtig: Importiere getValue und setValue für die Delegation
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ActivityScreen(viewModel: MainViewModel) {
+fun ActivityScreen(mainViewModel: MainViewModel = viewModel()) {
     val context = LocalContext.current
-    val detectedActivity by remember { derivedStateOf { viewModel.detectedActivity } }
+    // Speichere den aktuellen Wert in einer lokalen Variable
+    val detectedActivityData = mainViewModel.detectedActivity.value
 
     // Berechtigungs-Launcher
     val activityRecognitionPermissionLauncher = rememberLauncherForActivityResult(
@@ -51,7 +55,7 @@ fun ActivityScreen(viewModel: MainViewModel) {
                     ActivityRecognitionService.startService(context)
                     Toast.makeText(context, "Activity Recognition Started", Toast.LENGTH_SHORT).show()
                 } else {
-                    activityRecognitionPermissionLauncher.launch(Manifest.permission.ACTIVITY_RECOGNITION)
+                    activityRecognitionPermissionLauncher.launch(getActivityRecognitionPermission())
                 }
             },
             modifier = Modifier.fillMaxWidth()
@@ -76,22 +80,27 @@ fun ActivityScreen(viewModel: MainViewModel) {
         Text("Detected Activity:", style = MaterialTheme.typography.titleMedium)
         Spacer(modifier = Modifier.height(8.dp))
 
-        if (detectedActivity != null) {
-            Text("Activity: ${detectedActivity?.activityType}")
-            Text("Confidence: ${detectedActivity?.confidence}%")
+        if (detectedActivityData != null) {
+            Text("Activity: ${detectedActivityData.activityType}")
+            Text("Confidence: ${detectedActivityData.confidence}%")
         } else {
             Text("No activity detected.")
         }
     }
 }
 
-fun checkActivityRecognitionPermission(context: android.content.Context): Boolean {
+// Hilfsfunktionen für Berechtigungen
+fun getActivityRecognitionPermission(): String {
     return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-        ContextCompat.checkSelfPermission(
-            context,
-            Manifest.permission.ACTIVITY_RECOGNITION
-        ) == PackageManager.PERMISSION_GRANTED
+        Manifest.permission.ACTIVITY_RECOGNITION
     } else {
-        true
+        Manifest.permission.ACCESS_FINE_LOCATION
     }
+}
+
+fun checkActivityRecognitionPermission(context: android.content.Context): Boolean {
+    return ContextCompat.checkSelfPermission(
+        context,
+        getActivityRecognitionPermission()
+    ) == PackageManager.PERMISSION_GRANTED
 }
