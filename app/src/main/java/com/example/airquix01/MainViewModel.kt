@@ -1,11 +1,13 @@
 package com.example.airquix01
 
-import androidx.compose.runtime.mutableStateOf
-import androidx.lifecycle.ViewModel
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.ViewModel
+import com.google.android.gms.location.DetectedActivity
 
 data class CustomEnv(val name: String, val category: String)
+data class DetectedActivityData(val activityType: String, val confidence: Int)
 
 class MainViewModel : ViewModel() {
     val predefinedEnvironments = listOf("Inside", "Outside")
@@ -18,6 +20,9 @@ class MainViewModel : ViewModel() {
     var aiMismatchEnabled = mutableStateOf(true)
 
     var lastLogTime = 0L
+
+    // Neue State-Variablen für Activity Recognition
+    var detectedActivity by mutableStateOf<DetectedActivityData?>(null)
 
     fun addCustomEnvironment(env: String, category: String) {
         customEnvironments = customEnvironments + CustomEnv(env, category)
@@ -42,5 +47,20 @@ class MainViewModel : ViewModel() {
         }
         if (predefinedEnvironments.contains(env)) return env
         return null
+    }
+
+    // Neue Funktion zur Aktualisierung der erkannten Aktivität
+    fun updateDetectedActivity(activityType: Int, confidence: Int) {
+        val typeString = when (activityType) {
+            DetectedActivity.IN_VEHICLE -> "In Vehicle"
+            DetectedActivity.ON_BICYCLE -> "On Bicycle"
+            DetectedActivity.ON_FOOT -> "On Foot"
+            DetectedActivity.RUNNING -> "Running"
+            DetectedActivity.STILL -> "Still"
+            DetectedActivity.WALKING -> "Walking"
+            DetectedActivity.UNKNOWN -> "Unknown"
+            else -> "Unknown"
+        }
+        detectedActivity = DetectedActivityData(typeString, confidence)
     }
 }
