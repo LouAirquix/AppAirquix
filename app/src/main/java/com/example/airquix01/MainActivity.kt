@@ -39,6 +39,16 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private val requestActivityRecognitionPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            Log.d("MainActivity", "Activity Recognition permission granted.")
+        } else {
+            Log.e("MainActivity", "Activity Recognition permission denied.")
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -62,6 +72,17 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        // Activity Recognition Berechtigung für Android 10+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            if (ContextCompat.checkSelfPermission(
+                    this,
+                    Manifest.permission.ACTIVITY_RECOGNITION
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                requestActivityRecognitionPermissionLauncher.launch(Manifest.permission.ACTIVITY_RECOGNITION)
+            }
+        }
+
         setContent {
             MymlkitappTheme {
                 val viewModel = remember { MainViewModel() }
@@ -74,5 +95,6 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
         // Optional: Service stoppen wenn gewünscht
         // ForegroundCameraService.stopService(this)
+        // ActivityRecognitionService.stopService(this)
     }
 }
