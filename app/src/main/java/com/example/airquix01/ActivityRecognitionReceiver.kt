@@ -8,6 +8,8 @@ import android.util.Log
 
 class ActivityRecognitionReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
+        Log.d("ActivityRecognitionReceiver", "onReceive called")
+
         if (ActivityRecognitionResult.hasResult(intent)) {
             val result = ActivityRecognitionResult.extractResult(intent)
             result?.probableActivities?.let { activities ->
