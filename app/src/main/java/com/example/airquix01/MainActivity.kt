@@ -85,7 +85,8 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             MymlkitappTheme {
-                val viewModel = remember { MainViewModel() }
+                val airquixApplication = applicationContext as AirquixApplication
+                val viewModel = airquixApplication.getMainViewModel()
                 AppScreens(viewModel)
             }
         }

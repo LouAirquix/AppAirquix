@@ -3,12 +3,19 @@ package com.example.airquix01
 import android.util.Log
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import com.google.android.gms.location.DetectedActivity
 
 data class DetectedActivityData(val activityType: String, val confidence: Int)
+
+data class ActivityLogEntry(
+    val activityType: String,
+    val confidence: Int,
+    val timestamp: Long
+)
 
 class MainViewModel : ViewModel() {
     val predefinedEnvironments = listOf("Inside", "Outside")
@@ -25,6 +32,10 @@ class MainViewModel : ViewModel() {
     // Private MutableState für Activity Recognition
     private val _detectedActivity = mutableStateOf<DetectedActivityData?>(null)
     val detectedActivity: State<DetectedActivityData?> get() = _detectedActivity
+
+    // Liste für Activity Logs
+    private val _activityLogs = mutableStateListOf<ActivityLogEntry>()
+    val activityLogs: List<ActivityLogEntry> get() = _activityLogs
 
     fun addCustomEnvironment(env: String, category: String) {
         customEnvironments = customEnvironments + CustomEnv(env, category)
@@ -65,5 +76,19 @@ class MainViewModel : ViewModel() {
         }
         _detectedActivity.value = DetectedActivityData(typeString, confidence)
         Log.d("MainViewModel", "Detected Activity: $typeString with confidence $confidence%")
+
+        // Füge den Log-Eintrag hinzu
+        val logEntry = ActivityLogEntry(
+            activityType = typeString,
+            confidence = confidence,
+            timestamp = System.currentTimeMillis()
+        )
+        _activityLogs.add(logEntry)
+    }
+
+    // Funktion zum Löschen aller Logs
+    fun clearActivityLogs() {
+        _activityLogs.clear()
+        Log.d("MainViewModel", "All activity logs cleared.")
     }
 }
