@@ -37,6 +37,13 @@ android {
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
     }
+    sourceSets {
+        getByName("main") {
+            assets {
+                srcDirs("src\\main\\assets", "src\\main\\assets")
+            }
+        }
+    }
 }
 
 val camerax_version = "1.3.0"
@@ -73,6 +80,9 @@ dependencies {
 
     // Activity Recognition
     implementation("com.google.android.gms:play-services-location:21.3.0")
+
+    implementation("org.tensorflow:tensorflow-lite-task-audio:0.2.0")
+
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
