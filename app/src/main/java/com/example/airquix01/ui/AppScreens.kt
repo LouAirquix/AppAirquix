@@ -10,7 +10,6 @@ import com.example.airquix01.MainViewModel
 @Composable
 fun AppScreens(viewModel: MainViewModel) {
     var selectedTab by remember { mutableStateOf(0) }
-    // Füge "YamNet" (oder wie du es nennen möchtest) hinzu:
     val tabs = listOf("Camera", "AI Logs", "Manual", "Audio", "Activity", "YamNet")
 
     Scaffold(
@@ -36,7 +35,7 @@ fun AppScreens(viewModel: MainViewModel) {
                     2 -> ManualScreen(viewModel)
                     3 -> OtherInputsScreen(viewModel)
                     4 -> ActivityScreen(viewModel)
-                    5 -> YamNetScreen(viewModel)  // <-- Hier kommt dein neuer Screen!
+                    5 -> YamNetScreen(viewModel)
                 }
             }
         }
