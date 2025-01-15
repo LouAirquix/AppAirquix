@@ -22,32 +22,24 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleService
 import kotlinx.coroutines.*
 import java.util.concurrent.Executors
+
 /**
  * ServicePrefsHelper: um Einstellungen zu speichern (nicht sehr spannend)
  */
 object ServicePrefsHelper {
-    /**
-     * setzt die manuelle Umgebungskategorie
-     */
     private const val KEY_MANUAL_ENV_CATEGORY = "manual_env_category"
     fun setManualEnvCategory(context: Context, category: String?) {
         PrefsHelper.getPrefs(context).edit().putString(KEY_MANUAL_ENV_CATEGORY, category ?: "").apply()
     }
-    fun getManualEnvCategory(context: Context) = PrefsHelper.getPrefs(context).getString(KEY_MANUAL_ENV_CATEGORY, "")?.takeIf { it.isNotEmpty() }
+    fun getManualEnvCategory(context: Context) =
+        PrefsHelper.getPrefs(context).getString(KEY_MANUAL_ENV_CATEGORY, "")?.takeIf { it.isNotEmpty() }
 
     private const val KEY_MISMATCH_ENABLED = "mismatch_enabled"
-    /**
-    * Setzt, ob der Mismatch-Assistent aktiviert ist
-    */
     fun setMismatchEnabled(context: Context, enabled: Boolean) {
-        // Speichern der Mismatch-Status
         PrefsHelper.getPrefs(context).edit().putBoolean(KEY_MISMATCH_ENABLED, enabled).apply()
     }
-    /**
-     * Überprüft, ob der Mismatch-Assistent aktiviert ist
-     * da jeder ne kleine Erinnerung an die Realität braucht
-     */
-    fun isMismatchEnabled(context: Context) = PrefsHelper.getPrefs(context).getBoolean(KEY_MISMATCH_ENABLED, true)
+    fun isMismatchEnabled(context: Context) =
+        PrefsHelper.getPrefs(context).getBoolean(KEY_MISMATCH_ENABLED, true)
 }
 
 class ForegroundCameraService : LifecycleService() {
@@ -109,6 +101,12 @@ class ForegroundCameraService : LifecycleService() {
                 Executors.newSingleThreadExecutor(),
                 ImageLabelAnalyzer { labels ->
                     currentAiEnv = EnvironmentDetector.detectEnvironment(labels)
+
+                    // NEU: AI-Umgebung ans MainViewModel weitergeben
+                    val application = applicationContext as AirquixApplication
+                    val mainViewModel = application.getMainViewModel()
+                    mainViewModel.updateAiEnv(currentAiEnv)
+
                     if (ServicePrefsHelper.isMismatchEnabled(this)) {
                         checkMismatch(currentAiEnv)
                     } else {
@@ -120,7 +118,6 @@ class ForegroundCameraService : LifecycleService() {
             preview.setSurfaceProvider(DummySurfaceProvider(this))
 
             val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
-
             try {
                 provider.unbindAll()
                 provider.bindToLifecycle(
@@ -153,10 +150,11 @@ class ForegroundCameraService : LifecycleService() {
         val now = System.currentTimeMillis()
         if ((loggingAi || loggingManual) && now - lastLogTime >= 10_000) {
             lastLogTime = now
-            // AI direkt loggen mit Drinnen, Draußen, Im Auto
+            // AI-Logging
             if (loggingAi) {
                 aiLogger.logStatus(currentAiEnv)
             }
+            // Manuelles Logging
             if (loggingManual && !manualEnv.isNullOrEmpty()) {
                 manualLogger.logStatus(manualEnv)
             }
@@ -173,12 +171,10 @@ class ForegroundCameraService : LifecycleService() {
             return
         }
 
-        // Für Mismatch: "Im Auto" => "Drinnen"
         val aiCatForMismatch = if (aiEnv.lowercase() == "in car") "inside" else aiEnv.lowercase()
         val manCatForMismatch = manualCategory.lowercase()
 
         if (aiCatForMismatch != "inside" && aiCatForMismatch != "outside") {
-            // AI ist Unbekannt, dann kein Mismatch-check
             resetMismatch()
             return
         }
@@ -191,11 +187,17 @@ class ForegroundCameraService : LifecycleService() {
             val now = System.currentTimeMillis()
             if (!mismatchNotificationSent && now - lastMismatchStartTime > longMismatchDuration) {
                 mismatchNotificationSent = true
-                showMismatchNotification("Long mismatch :(", "The manual status has differed from the AI status for some time!")
+                showMismatchNotification(
+                    "Long mismatch :(",
+                    "The manual status has differed from the AI status for some time!"
+                )
             }
         } else {
             if (mismatchCount > 0 && mismatchNotificationSent) {
-                showMismatchNotification("Mismatch fixed :)", "Huhuu! The status again corresponds to the expected environment.")
+                showMismatchNotification(
+                    "Mismatch fixed :)",
+                    "Huhuu! The status again corresponds to the expected environment."
+                )
             }
             resetMismatch()
         }

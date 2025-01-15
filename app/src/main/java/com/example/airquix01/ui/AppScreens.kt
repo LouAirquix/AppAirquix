@@ -10,7 +10,9 @@ import com.example.airquix01.MainViewModel
 @Composable
 fun AppScreens(viewModel: MainViewModel) {
     var selectedTab by remember { mutableStateOf(0) }
-    val tabs = listOf("Camera", "AI Logs", "Manual", "Audio", "Activity", "YamNet")
+
+    // Bestehende Tabs + Neuer Tab "AllInOne"
+    val tabs = listOf("Camera", "AI Logs", "Manual", "Audio", "Activity", "YamNet", "AllInOne")
 
     Scaffold(
         topBar = {
@@ -36,9 +38,9 @@ fun AppScreens(viewModel: MainViewModel) {
                     3 -> OtherInputsScreen(viewModel)
                     4 -> ActivityScreen(viewModel)
                     5 -> YamNetScreen(viewModel)
+                    6 -> AllInOneScreen(viewModel)  // NEU
                 }
             }
         }
     )
 }
-

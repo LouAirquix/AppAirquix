@@ -14,28 +14,24 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import com.example.airquix01.AirquixApplication
 import com.example.airquix01.MainViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.tensorflow.lite.task.audio.classifier.AudioClassifier
 import java.util.*
-import androidx.compose.ui.unit.dp
-
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun YamNetScreen(viewModel: MainViewModel) {
     val context = LocalContext.current
 
-    // Text, der das Klassifikationsergebnis anzeigt
     var classificationResult by remember { mutableStateOf("No classification yet") }
-
-    // Threshold für gefilterte Kategorien
     val probabilityThreshold = 0.3f
 
-    // Wir fordern die RECORD_AUDIO-Berechtigung an, falls sie nicht vorhanden ist
     val hasMicPermission = remember {
         ContextCompat.checkSelfPermission(
             context,
@@ -50,17 +46,13 @@ fun YamNetScreen(viewModel: MainViewModel) {
         }
     }
 
-    // Coroutine-Scope für wiederholte Klassifikation
     val scope = rememberCoroutineScope()
 
-    // Merken uns den AudioRecord und den Timer (oder Job), damit wir sie bei Bedarf stoppen können
     var audioRecord by remember { mutableStateOf<AudioRecord?>(null) }
     var isClassifying by remember { mutableStateOf(false) }
 
-    // Falls du das Modell im assets-Ordner liegen hast:
     val modelPath = "lite-model_yamnet_classification_tflite_1.tflite"
 
-    // Funktion zum Starten der Klassifikation
     fun startClassification() {
         if (!hasMicPermission) {
             micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
@@ -69,11 +61,9 @@ fun YamNetScreen(viewModel: MainViewModel) {
         if (isClassifying) return
 
         try {
-            // 1. Erzeuge den AudioClassifier
             val classifier = AudioClassifier.createFromFile(context, modelPath)
             val tensor = classifier.createInputTensorAudio()
 
-            // 2. AudioRecord holen
             val record = classifier.createAudioRecord()
             record.startRecording()
             audioRecord = record
@@ -81,19 +71,22 @@ fun YamNetScreen(viewModel: MainViewModel) {
             isClassifying = true
             classificationResult = "Listening..."
 
-            // 3. Wiederholt Audio-Daten lesen und klassifizieren
             scope.launch(Dispatchers.Default) {
                 while (isClassifying) {
-                    // Lad die Daten in den Tensor
                     tensor.load(record)
-                    // Klassifiziere die Daten
                     val output = classifier.classify(tensor)
-                    // Filtere
                     val filteredModelOutput = output[0].categories.filter {
                         it.score >= probabilityThreshold
                     }.sortedByDescending { it.score }
 
-                    // Erstelle den Anzeigetext
+                    // NEU: Falls es ein Top-Ergebnis gibt => ans MainViewModel geben
+                    val bestCategory = filteredModelOutput.firstOrNull()
+                    if (bestCategory != null) {
+                        val application = context.applicationContext as AirquixApplication
+                        val mainViewModel = application.getMainViewModel()
+                        mainViewModel.updateYamNetResult(bestCategory.label, bestCategory.score)
+                    }
+
                     val resultStr = if (filteredModelOutput.isNotEmpty()) {
                         filteredModelOutput.joinToString("\n") {
                             "${it.label} (${String.format("%.2f", it.score)})"
@@ -101,11 +94,7 @@ fun YamNetScreen(viewModel: MainViewModel) {
                     } else {
                         "No sound with probability > $probabilityThreshold"
                     }
-
-                    // UI aktualisieren
                     classificationResult = resultStr
-
-                    // Warte 500ms bis zum nächsten Durchlauf
                     delay(500)
                 }
             }
@@ -116,7 +105,6 @@ fun YamNetScreen(viewModel: MainViewModel) {
         }
     }
 
-    // Funktion zum Stoppen der Klassifikation
     fun stopClassification() {
         isClassifying = false
         audioRecord?.stop()
@@ -125,7 +113,6 @@ fun YamNetScreen(viewModel: MainViewModel) {
         classificationResult = "Classification stopped."
     }
 
-    // UI
     Column(
         modifier = Modifier
             .fillMaxSize()
