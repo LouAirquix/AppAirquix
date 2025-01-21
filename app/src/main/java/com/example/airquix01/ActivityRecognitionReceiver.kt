@@ -3,8 +3,8 @@ package com.example.airquix01
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import com.google.android.gms.location.ActivityRecognitionResult
 import android.util.Log
+import com.google.android.gms.location.ActivityRecognitionResult
 
 class ActivityRecognitionReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -19,15 +19,14 @@ class ActivityRecognitionReceiver : BroadcastReceiver() {
                 val mostProbableActivity = activities.maxByOrNull { it.confidence }
 
                 mostProbableActivity?.let { activity ->
-                    Log.d("ActivityRecognitionReceiver", "Detected Activity: ${activity.type}, Confidence: ${activity.confidence}%")
+                    Log.d("ActivityRecognitionReceiver",
+                        "Detected Activity: ${activity.type}, Confidence: ${activity.confidence}%")
 
                     // Aktualisiere das ViewModel
                     val application = context.applicationContext as AirquixApplication
                     val viewModel = application.getMainViewModel()
                     viewModel.updateDetectedActivity(activity.type, activity.confidence)
                 }
-            } ?: run {
-                Log.d("ActivityRecognitionReceiver", "No activities found in result")
             }
         } else {
             Log.d("ActivityRecognitionReceiver", "No activity recognition result found")

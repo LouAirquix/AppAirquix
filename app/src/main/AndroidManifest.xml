@@ -24,45 +24,33 @@
 
     <application
         android:name=".AirquixApplication"
-        android:label="@string/app_name"
         android:allowBackup="true"
+        android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/Theme.Airquix01">
 
-        <!-- Bestehende Meta-Daten und Aktivitäten -->
-
-        <meta-data
-            android:name="com.google.mlkit.vision.DEPENDENCIES"
-            android:value="ica" />
-
-        <activity android:name=".MainActivity"
+        <!-- MainActivity als Launcher -->
+        <activity
+            android:name=".MainActivity"
             android:exported="true">
             <intent-filter>
-                <action android:name="android.intent.action.MAIN"/>
-                <category android:name="android.intent.category.LAUNCHER"/>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
 
+        <!-- Unser neuer LoggingService -->
         <service
-            android:name=".ForegroundCameraService"
+            android:name=".LoggingService"
             android:exported="false"
-            android:foregroundServiceType="camera" />
-
-        <service
-            android:name=".ForegroundAudioService"
-            android:exported="false"
-            android:foregroundServiceType="microphone"/>
-
-        <!-- Activity Recognition Service -->
-        <service
-            android:name=".ActivityRecognitionService"
-            android:exported="false" />
+            android:foregroundServiceType="camera|microphone" />
 
         <!-- Activity Recognition Receiver -->
         <receiver
             android:name=".ActivityRecognitionReceiver"
             android:exported="false" />
 
+        <!-- FileProvider zum Teilen der CSV -->
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.provider"
@@ -74,5 +62,4 @@
         </provider>
 
     </application>
-
 </manifest>

@@ -11,9 +11,7 @@ class ImageLabelAnalyzer(
     private val onLabelsDetected: (labels: List<com.google.mlkit.vision.label.ImageLabel>) -> Unit
 ) : ImageAnalysis.Analyzer {
 
-    private val labeler = ImageLabeling.getClient(
-        ImageLabelerOptions.DEFAULT_OPTIONS
-    )
+    private val labeler = ImageLabeling.getClient(ImageLabelerOptions.DEFAULT_OPTIONS)
 
     @SuppressLint("UnsafeOptInUsageError")
     override fun analyze(imageProxy: ImageProxy) {
