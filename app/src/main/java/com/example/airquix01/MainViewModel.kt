@@ -1,68 +1,62 @@
 package com.example.airquix01
 
 import android.util.Log
-import androidx.compose.runtime.State
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import com.google.android.gms.location.DetectedActivity
-
-data class DetectedActivityData(val activityType: String, val confidence: Int)
-
-data class ActivityLogEntry(
-    val activityType: String,
-    val confidence: Int,
-    val timestamp: Long
-)
+import java.io.File
+import java.io.FileWriter
+import java.text.SimpleDateFormat
+import java.util.*
 
 class MainViewModel : ViewModel() {
-    val predefinedEnvironments = listOf("Inside", "Outside")
-    var customEnvironments by mutableStateOf(listOf<CustomEnv>())
-    var currentManualEnvironment by mutableStateOf<String?>(null)
 
-    var loggingEnabledAi = mutableStateOf(false)
-    var loggingEnabledManual = mutableStateOf(false)
-    var cameraInService = mutableStateOf(false)
-    var aiMismatchEnabled = mutableStateOf(true)
+    // Indikator, ob aktuell geloggt wird
+    val isLogging = mutableStateOf(false)
 
-    var lastLogTime = 0L
+    // Kamerabasiertes Environment
+    val currentEnvironment = mutableStateOf<String?>(null)
+    val currentEnvironmentConfidence = mutableStateOf(0f)
 
-    // Private MutableState für Activity Recognition
-    private val _detectedActivity = mutableStateOf<DetectedActivityData?>(null)
-    val detectedActivity: State<DetectedActivityData?> get() = _detectedActivity
+    // Aktivität
+    val detectedActivity = mutableStateOf<DetectedActivityData?>(null)
 
-    // Liste für Activity Logs
-    private val _activityLogs = mutableStateListOf<ActivityLogEntry>()
-    val activityLogs: List<ActivityLogEntry> get() = _activityLogs
+    // YamNet
+    val currentYamnetLabel = mutableStateOf("No sound yet")
+    val currentYamnetConfidence = mutableStateOf(0f)
 
-    fun addCustomEnvironment(env: String, category: String) {
-        customEnvironments = customEnvironments + CustomEnv(env, category)
+    // Logs (nur zur Anzeige in der UI)
+    val logList = mutableStateListOf<String>()
+
+    // Eine einfache Datenklasse für Activity
+    data class DetectedActivityData(val activityType: String, val confidence: Int)
+
+    // CSV-Datei
+    private val sdf = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.getDefault())
+    private val csvFileName = "all_in_one_logs.csv"
+
+    private var csvFile: File? = null
+
+    init {
+        // Initialisierung kann hier erfolgen, falls nötig
     }
 
-    fun setManualEnvironment(env: String?) {
-        currentManualEnvironment = env
-    }
-
-    fun shouldLog(): Boolean {
-        val now = System.currentTimeMillis()
-        if (now - lastLogTime >= 10000) { // 10 Sekunden für Testzwecke
-            lastLogTime = now
-            return true
+    fun getCsvFile(): File {
+        if (csvFile == null) {
+            // Erstelle im App-spezifischen ExternalFilesDir
+            // (damit wir die FileProvider-Freigabe nutzen können)
+            val dir = AirquixApplication.appContext.getExternalFilesDir(null)
+            csvFile = File(dir, csvFileName)
+            if (!csvFile!!.exists()) {
+                // Kopfzeile schreiben
+                csvFile!!.writeText("timestamp,ENV,ENV_confidence,ACT,ACT_confidence,YAMNET_label,YAMNET_confidence\n")
+            }
         }
-        return false
+        return csvFile!!
     }
 
-    fun getManualEnvCategory(env: String): String? {
-        customEnvironments.forEach {
-            if (it.name == env) return it.category
-        }
-        if (predefinedEnvironments.contains(env)) return env
-        return null
-    }
-
-    // Funktion zur Aktualisierung der erkannten Aktivität
+    // Wird von ActivityRecognitionReceiver aufgerufen
     fun updateDetectedActivity(activityType: Int, confidence: Int) {
         val typeString = when (activityType) {
             DetectedActivity.IN_VEHICLE -> "In Vehicle"
@@ -70,25 +64,41 @@ class MainViewModel : ViewModel() {
             DetectedActivity.ON_FOOT -> "On Foot"
             DetectedActivity.RUNNING -> "Running"
             DetectedActivity.STILL -> "Still"
+            DetectedActivity.TILTING -> "Tilting"
             DetectedActivity.WALKING -> "Walking"
             DetectedActivity.UNKNOWN -> "Unknown"
             else -> "Unknown"
         }
-        _detectedActivity.value = DetectedActivityData(typeString, confidence)
-        Log.d("MainViewModel", "Detected Activity: $typeString with confidence $confidence%")
-
-        // Füge den Log-Eintrag hinzu
-        val logEntry = ActivityLogEntry(
-            activityType = typeString,
-            confidence = confidence,
-            timestamp = System.currentTimeMillis()
-        )
-        _activityLogs.add(logEntry)
+        detectedActivity.value = DetectedActivityData(typeString, confidence)
+        Log.d("MainViewModel", "Detected Activity: $typeString ($confidence%)")
     }
 
-    // Funktion zum Löschen aller Logs
-    fun clearActivityLogs() {
-        _activityLogs.clear()
-        Log.d("MainViewModel", "All activity logs cleared.")
+    // Wird vom Service z.B. jede Sekunde aufgerufen
+    fun appendLog(line: String) {
+        // In Compose-Liste
+        logList.add(line)
+
+        // In CSV
+        try {
+            val file = getCsvFile()
+            FileWriter(file, true).use { writer ->
+                writer.appendLine(line)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        // Optional: Log.d
+        Log.d("MainViewModel", "LOGGED -> $line")
+    }
+
+    fun clearLogs() {
+        logList.clear()
+        val file = getCsvFile()
+        if (file.exists()) {
+            file.delete()
+        }
+        // neue Kopfzeile
+        file.writeText("timestamp,ENV,ENV_confidence,ACT,ACT_confidence,YAMNET_label,YAMNET_confidence\n")
     }
 }
