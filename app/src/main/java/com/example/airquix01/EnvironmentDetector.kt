@@ -27,6 +27,7 @@ object EnvironmentDetector {
                 text.contains("desk") ||
                 text.contains("chair") ||
                 text.contains("furniture") ||
+                text.contains("infrastructure") ||
                 text.contains("couch")
 
                 ) {
@@ -38,13 +39,12 @@ object EnvironmentDetector {
                 text.contains("field") ||
                 text.contains("park") ||
                 text.contains("sky") ||
-                text.contains("car") ||
                 text.contains("lake") ||
-                text.contains("building") ||
                 text.contains("beach") ||
                 text.contains("field") ||
                 text.contains("mountain") ||
                 text.contains("garden") ||
+                text.contains("car") ||
                 text.contains("asphalt")
 
             ) {
