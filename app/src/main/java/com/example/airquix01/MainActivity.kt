@@ -22,37 +22,32 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.example.airquix01.ui.theme.MymlkitappTheme
 
-@OptIn(ExperimentalMaterial3Api::class)
 class MainActivity : ComponentActivity() {
 
-    // Berechtigungs-Launcher für mehrere Permissions
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         val denied = permissions.filterValues { !it }
         if (denied.isNotEmpty()) {
-            // Einige Berechtigungen nicht erteilt
             Toast.makeText(this, "Some permissions denied: $denied", Toast.LENGTH_SHORT).show()
         } else {
-            // Alles ok
             Toast.makeText(this, "Permissions granted.", Toast.LENGTH_SHORT).show()
         }
     }
 
+    @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Zur Sicherheit: Kamera, Mikrofon, Activity Recognition anfragen
+        // Berechtigungen anfragen
         checkAndRequestPermissions()
 
         setContent {
             MymlkitappTheme {
-                // Aus dem Application-Objekt das ViewModel holen
                 val context = LocalContext.current
                 val app = context.applicationContext as AirquixApplication
                 val viewModel = app.getMainViewModel()
 
-                // Scaffold für ein grundlegendes Layout (TopAppBar + Content)
                 Scaffold(
                     topBar = {
                         SmallTopAppBar(
@@ -60,23 +55,23 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                 ) { innerPadding ->
-                    // Hauptbildschirm mit Buttons und Log-Liste
                     MainScreen(
                         modifier = Modifier.padding(innerPadding),
                         viewModel = viewModel,
                         onStartLogging = { startLoggingService() },
                         onStopLogging = { stopLoggingService() },
-                        onClearLogs = { viewModel.clearLogs() },
-                        onShareLogs = { shareCsvFile() }
+                        onClearLogs = { viewModel.clearAllLogs() },
+                        onShareLogs = { shareCsvLogs() },
+                        onShareFeatureCsv = { shareFeatureCsv() }
                     )
                 }
             }
         }
     }
 
-    /**
-     * Zeigt die Hauptoberfläche mit Start-/Stop-Buttons, Clear-/Share-Buttons und den Logs in einer LazyColumn.
-     */
+    // -----------------------------------------------------------
+    // UI-Composables
+    // -----------------------------------------------------------
     @Composable
     fun MainScreen(
         modifier: Modifier = Modifier,
@@ -84,16 +79,14 @@ class MainActivity : ComponentActivity() {
         onStartLogging: () -> Unit,
         onStopLogging: () -> Unit,
         onClearLogs: () -> Unit,
-        onShareLogs: () -> Unit
+        onShareLogs: () -> Unit,
+        onShareFeatureCsv: () -> Unit
     ) {
         Column(
             modifier = modifier
                 .fillMaxSize()
                 .padding(16.dp)
         ) {
-            // Entfernt: "Simple Logging App"
-
-            // Erste Button-Reihe (Start/Stop Logging) füllt gesamte Breite
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(16.dp)
@@ -116,7 +109,6 @@ class MainActivity : ComponentActivity() {
 
             Spacer(Modifier.height(16.dp))
 
-            // Zweite Button-Reihe (Clear/Share) füllt gesamte Breite
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(16.dp)
@@ -131,7 +123,13 @@ class MainActivity : ComponentActivity() {
                     onClick = onShareLogs,
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text("Share CSV")
+                    Text("Share CSV Logs")
+                }
+                Button(
+                    onClick = onShareFeatureCsv,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Share Feature CSV")
                 }
             }
 
@@ -144,7 +142,6 @@ class MainActivity : ComponentActivity() {
             if (logList.isEmpty()) {
                 Text("No logs yet.")
             } else {
-                // Anzeigen der Logs in einer LazyColumn
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
                     items(logList) { logLine ->
                         LogItem(logLine)
@@ -155,13 +152,75 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * Zeigt einen einzelnen Log-Eintrag in einer Card mit etwas Abstand.
-     * Wir zerlegen den CSV-String grob und ordnen die Felder an.
+     * CSV-Parsing, damit wir die Felder korrekt erhalten,
+     * selbst wenn ein Feld doppelte Anführungszeichen oder Kommata enthält.
+     *
+     * Hier ein stark vereinfachter CSV-Parser:
+     * - Trennt Felder an Kommas,
+     * - beachtet Anführungszeichen und escaped Quotes.
      */
+    private fun parseCsvLine(line: String): List<String> {
+        val result = mutableListOf<String>()
+        var current = StringBuilder()
+        var insideQuotes = false
+        var i = 0
+
+        while (i < line.length) {
+            val c = line[i]
+            when {
+                c == '"' -> {
+                    if (insideQuotes && i + 1 < line.length && line[i + 1] == '"') {
+                        // Escaped quote "" -> füge ein " hinzu
+                        current.append('"')
+                        i++
+                    } else {
+                        // Toggle insideQuotes
+                        insideQuotes = !insideQuotes
+                    }
+                }
+                c == ',' && !insideQuotes -> {
+                    // Feldende
+                    result.add(current.toString())
+                    current = StringBuilder()
+                }
+                else -> {
+                    current.append(c)
+                }
+            }
+            i++
+        }
+        // letztes Feld
+        result.add(current.toString())
+        return result
+    }
+
     @Composable
     fun LogItem(logLine: String) {
-        // CSV-Aufbau: timestamp,ENV,ENV_confidence,ACT,ACT_confidence,YAMNET_label,YAMNET_confidence
-        val parts = remember(logLine) { logLine.split(",") }
+        // Unsere CSV hat 11 Spalten:
+        //  0: timestamp
+        //  1: ENV
+        //  2: ENV_confidence
+        //  3: ACT
+        //  4: ACT_confidence
+        //  5: YAMNET_top1
+        //  6: top1_conf
+        //  7: YAMNET_top2
+        //  8: top2_conf
+        //  9: YAMNET_top3
+        // 10: top3_conf
+        val parts = remember(logLine) { parseCsvLine(logLine) }
+
+        val timestamp = parts.getOrNull(0) ?: ""
+        val env = parts.getOrNull(1) ?: ""
+        val envConf = parts.getOrNull(2) ?: ""
+        val act = parts.getOrNull(3) ?: ""
+        val actConf = parts.getOrNull(4) ?: ""
+        val top1Label = parts.getOrNull(5) ?: ""
+        val top1Conf = parts.getOrNull(6) ?: ""
+        val top2Label = parts.getOrNull(7) ?: ""
+        val top2Conf = parts.getOrNull(8) ?: ""
+        val top3Label = parts.getOrNull(9) ?: ""
+        val top3Conf = parts.getOrNull(10) ?: ""
 
         Card(
             modifier = Modifier
@@ -172,47 +231,33 @@ class MainActivity : ComponentActivity() {
             )
         ) {
             Column(modifier = Modifier.padding(8.dp)) {
-                Text(
-                    text = "Timestamp: ${parts.getOrNull(0) ?: ""}",
-                    style = MaterialTheme.typography.bodySmall
-                )
-                Text(
-                    text = "Environment: ${parts.getOrNull(1) ?: "?"} (conf: ${parts.getOrNull(2) ?: "?"})",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-                Text(
-                    text = "Activity: ${parts.getOrNull(3) ?: "?"} (conf: ${parts.getOrNull(4) ?: "?"})",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-                Text(
-                    text = "Audio: ${parts.getOrNull(5) ?: "?"} (conf: ${parts.getOrNull(6) ?: "?"})",
-                    style = MaterialTheme.typography.bodyMedium
-                )
+                Text("Timestamp: $timestamp", style = MaterialTheme.typography.bodySmall)
+                Text("Environment: $env (conf: $envConf)")
+                Text("Activity: $act (conf: $actConf)")
+                Text("Top-1: $top1Label (conf: $top1Conf)")
+                Text("Top-2: $top2Label (conf: $top2Conf)")
+                Text("Top-3: $top3Label (conf: $top3Conf)")
             }
         }
     }
 
-    /**
-     * Fordert die wichtigsten Berechtigungen an, sofern sie nicht vorhanden sind.
-     */
+    // -----------------------------------------------------------
+    // Hilfsfunktionen
+    // -----------------------------------------------------------
+
     private fun checkAndRequestPermissions() {
         val needed = mutableListOf<String>()
 
-        // Kamera
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
             != PackageManager.PERMISSION_GRANTED
         ) {
             needed.add(Manifest.permission.CAMERA)
         }
-
-        // Mikrofon
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
             != PackageManager.PERMISSION_GRANTED
         ) {
             needed.add(Manifest.permission.RECORD_AUDIO)
         }
-
-        // Activity Recognition
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACTIVITY_RECOGNITION)
                 != PackageManager.PERMISSION_GRANTED
@@ -220,8 +265,6 @@ class MainActivity : ComponentActivity() {
                 needed.add(Manifest.permission.ACTIVITY_RECOGNITION)
             }
         }
-
-        // Post Notifications (ab Android 13)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
                 != PackageManager.PERMISSION_GRANTED
@@ -229,7 +272,6 @@ class MainActivity : ComponentActivity() {
                 needed.add(Manifest.permission.POST_NOTIFICATIONS)
             }
         }
-
         if (needed.isNotEmpty()) {
             requestPermissionLauncher.launch(needed.toTypedArray())
         }
@@ -245,27 +287,47 @@ class MainActivity : ComponentActivity() {
         stopService(intent)
     }
 
-    private fun shareCsvFile() {
-        val context = this
-        val app = applicationContext as AirquixApplication
-        val csvFile = app.getMainViewModel().getCsvFile()
+    private fun shareCsvLogs() {
+        val vm = (applicationContext as AirquixApplication).getMainViewModel()
+        val csvFile = vm.getLogsCsvFile()
 
         if (!csvFile.exists()) {
-            Toast.makeText(context, "No CSV to share.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "No CSV logs to share.", Toast.LENGTH_SHORT).show()
             return
         }
 
         val uri = androidx.core.content.FileProvider.getUriForFile(
-            context,
+            this,
             packageName + ".provider",
             csvFile
         )
-
         val intent = Intent(Intent.ACTION_SEND).apply {
             type = "text/csv"
             putExtra(Intent.EXTRA_STREAM, uri)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
-        startActivity(Intent.createChooser(intent, "Share CSV"))
+        startActivity(Intent.createChooser(intent, "Share CSV Logs"))
+    }
+
+    private fun shareFeatureCsv() {
+        val vm = (applicationContext as AirquixApplication).getMainViewModel()
+        val csvFile = vm.getFeatureCsvFile()
+
+        if (!csvFile.exists()) {
+            Toast.makeText(this, "No Feature CSV to share.", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val uri = androidx.core.content.FileProvider.getUriForFile(
+            this,
+            packageName + ".provider",
+            csvFile
+        )
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/csv"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        startActivity(Intent.createChooser(intent, "Share Feature CSV"))
     }
 }
