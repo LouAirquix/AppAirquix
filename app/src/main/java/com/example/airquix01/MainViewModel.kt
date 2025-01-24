@@ -13,7 +13,7 @@ import java.util.Locale
 
 class MainViewModel : ViewModel() {
 
-    // Gibt an, ob Logging aktiv ist
+    // Flag, ob Logging aktiv ist
     val isLogging = mutableStateOf(false)
 
     // Kamerabasiertes Environment
@@ -26,16 +26,16 @@ class MainViewModel : ViewModel() {
     // YAMNet: Top-3 pro Sekunde
     val currentYamnetTop3 = mutableStateOf<List<LabelConfidence>>(emptyList())
 
-    // Logs (UI-Anzeige)
+    // Logs (nur für die UI)
     val logList = mutableStateListOf<String>()
 
-    // CSV-Dateien
+    // CSV-Dateinamen
     private val logsCsvFileName = "all_in_one_logs.csv"
     private val featureCsvFileName = "feature_vectors.csv"
     private var logsCsvFile: File? = null
     private var featureCsvFile: File? = null
 
-    // Zwei-Minuten-Aggregation
+    // Aggregator, der alle 2 Minuten eine Zeile in feature_vectors.csv schreibt
     private val aggregator = TwoMinuteAggregator()
 
     // ----------------------------
@@ -45,17 +45,8 @@ class MainViewModel : ViewModel() {
     data class LabelConfidence(val label: String, val confidence: Float)
 
     // ----------------------------
-    // CSV-Escape-Funktion
+    // CSV-Escaping (um Kommas zu erlauben)
     // ----------------------------
-    /**
-     * Falls der String Kommata oder Anführungszeichen enthält,
-     * umschließen wir ihn mit doppelten Anführungszeichen
-     * und ersetzen etwaige Anführungszeichen im Innern durch "".
-     *
-     * Beispiele:
-     *   Inside, small room -> "Inside, small room"
-     *   Hello "World" -> "Hello ""World"""
-     */
     private fun csvEscape(str: String?): String {
         if (str == null) return ""
         return if (str.contains(",") || str.contains("\"")) {
@@ -66,10 +57,10 @@ class MainViewModel : ViewModel() {
     }
 
     // ----------------------------
-    // Aggregator für 2-Minuten-Fenster
+    // TwoMinuteAggregator
     // ----------------------------
     inner class TwoMinuteAggregator {
-        private val envBuffer = mutableListOf<Pair<String, Float>>()
+        private val envBuffer = mutableListOf<Pair<String, Float>>()   // (env, envConf)
         private val actBuffer = mutableListOf<DetectedActivityData>()
         private val yamBuffer = mutableListOf<List<LabelConfidence>>()
 
@@ -82,11 +73,13 @@ class MainViewModel : ViewModel() {
             yamTop3: List<LabelConfidence>
         ) {
             envBuffer.add(env to envConf)
-            if (act != null) actBuffer.add(act)
+            if (act != null) {
+                actBuffer.add(act)
+            }
             yamBuffer.add(yamTop3)
             counter++
 
-            // Alle 120 Einträge ~ 2 Min bei 1Hz
+            // Nach 120 Einträgen = 2 Minuten (bei 1Hz) erstellen wir eine Feature-Zeile
             if (counter >= 120) {
                 createFeatureVectorAndSave()
                 envBuffer.clear()
@@ -96,21 +89,25 @@ class MainViewModel : ViewModel() {
             }
         }
 
+        /**
+         * Schreibt eine Zeile in feature_vectors.csv
+         */
         private fun createFeatureVectorAndSave() {
             val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
                 .format(Date(System.currentTimeMillis()))
 
+            // 1) Environment: häufigstes
             val envLabel = calculateMostFrequentEnv()
+            // 2) Aktivität: priorisiert
             val actLabel = calculatePriorityActivity()
+            // 3) Top-3 YAMNet
             val (top3Labels, top3Confs) = calculateTop3Yamnet()
 
-            // time, envLabel, actLabel, top1, top1Conf, top2, top2Conf, top3, top3Conf
+            // CSV-Aufbau: time, envLabel, actLabel, top1, top1Conf, top2, top2Conf, top3, top3Conf
             val csvLine = buildString {
                 append(csvEscape(timestamp)).append(",")
                 append(csvEscape(envLabel)).append(",")
                 append(csvEscape(actLabel)).append(",")
-
-                // Top-3
                 for (i in 0..2) {
                     val lbl = top3Labels.getOrNull(i) ?: "none"
                     val conf = top3Confs.getOrNull(i) ?: 0f
@@ -143,7 +140,7 @@ class MainViewModel : ViewModel() {
             if (hasVehicle) return "vehicle"
             if (hasOnBike) return "on_bike"
 
-            // unknown < still < on_foot < running
+            // Sonst unknown < still < on_foot < running
             val freqMap = mutableMapOf<String, Int>()
             actBuffer.forEach { a ->
                 freqMap[a.activityType] = freqMap.getOrDefault(a.activityType, 0) + 1
@@ -168,15 +165,11 @@ class MainViewModel : ViewModel() {
                     labelConfSum[label] = labelConfSum.getOrDefault(label, 0f) + labelConf.confidence
                 }
             }
-
             if (labelCount.isEmpty()) return Pair(emptyList(), emptyList())
 
-            // Durchschnittliche Conf
             val labelAvgConf = labelConfSum.mapValues { (lbl, sum) ->
-                sum / (labelCount[lbl] ?: 1)
+                sum / labelCount[lbl]!!
             }
-
-            // Sortieren: Häufigkeit desc, dann Conf desc
             val sortedLabels = labelCount.keys.sortedWith(
                 compareByDescending<String> { labelCount[it] ?: 0 }
                     .thenByDescending { labelAvgConf[it] ?: 0f }
@@ -189,7 +182,7 @@ class MainViewModel : ViewModel() {
     }
 
     // ----------------------------
-    // Update der Aktivität
+    // Aktivität updaten
     // ----------------------------
     fun updateDetectedActivity(activityType: Int, confidence: Int) {
         val typeString = when (activityType) {
@@ -217,29 +210,36 @@ class MainViewModel : ViewModel() {
         actConf: Int,
         yamTop3: List<LabelConfidence>
     ) {
-        // time, env, env_conf, act, act_conf, top1, top1Conf, top2, top2Conf, top3, top3Conf
+        // => time,env,env_conf,act,act_conf,top1,top1Conf,top2,top2Conf,top3,top3Conf
         val top1 = yamTop3.getOrNull(0)
         val top2 = yamTop3.getOrNull(1)
         val top3 = yamTop3.getOrNull(2)
 
-        // CSV-Escaping
-        val timeCsv = csvEscape(timeStr)
-        val envCsv = csvEscape(env)
-        val actCsv = csvEscape(act)
-        val envConfStr = "%.2f".format(Locale.US, envConf)
+        val line = buildString {
+            append(csvEscape(timeStr)).append(",")
+            append(csvEscape(env)).append(",")
+            append("%.2f".format(Locale.US, envConf)).append(",")
+            append(csvEscape(act)).append(",")
+            append(actConf).append(",")
 
-        val top1Label = csvEscape(top1?.label ?: "none")
-        val top1Conf = "%.2f".format(Locale.US, top1?.confidence ?: 0f)
-        val top2Label = csvEscape(top2?.label ?: "none")
-        val top2Conf = "%.2f".format(Locale.US, top2?.confidence ?: 0f)
-        val top3Label = csvEscape(top3?.label ?: "none")
-        val top3Conf = "%.2f".format(Locale.US, top3?.confidence ?: 0f)
+            val top1Label = csvEscape(top1?.label ?: "none")
+            val top1Conf = "%.2f".format(Locale.US, top1?.confidence ?: 0f)
+            val top2Label = csvEscape(top2?.label ?: "none")
+            val top2Conf = "%.2f".format(Locale.US, top2?.confidence ?: 0f)
+            val top3Label = csvEscape(top3?.label ?: "none")
+            val top3Conf = "%.2f".format(Locale.US, top3?.confidence ?: 0f)
 
-        val line = "$timeCsv,$envCsv,$envConfStr,$actCsv,$actConf," +
-                "$top1Label,$top1Conf,$top2Label,$top2Conf,$top3Label,$top3Conf"
+            append(top1Label).append(",")
+            append(top1Conf).append(",")
+            append(top2Label).append(",")
+            append(top2Conf).append(",")
+            append(top3Label).append(",")
+            append(top3Conf)
+        }
 
         logList.add(line)
 
+        // In Logs-CSV schreiben
         try {
             val file = getLogsCsvFile()
             FileWriter(file, true).use { writer ->
@@ -249,18 +249,14 @@ class MainViewModel : ViewModel() {
             e.printStackTrace()
         }
 
-        // 2-Minuten-Aggregation
-        aggregator.addData(
-            env, envConf,
-            detectedActivity.value,
-            yamTop3
-        )
+        // Dem Aggregator hinzufügen -> alle 2 Min => Feature-Vektor
+        aggregator.addData(env, envConf, detectedActivity.value, yamTop3)
 
         Log.d("MainViewModel", "LOGGED -> $line")
     }
 
     // ----------------------------
-    // CSV-Dateien holen/erstellen
+    // CSV-Dateien
     // ----------------------------
     fun getLogsCsvFile(): File {
         if (logsCsvFile == null) {
