@@ -49,7 +49,7 @@ class MainActivity : ComponentActivity() {
                 Scaffold(
                     topBar = {
                         SmallTopAppBar(
-                            title = { Text("Airquix01 - LMU") }
+                            title = { Text("Airquix01App - LMU") }
                         )
                     }
                 ) { innerPadding ->
@@ -129,7 +129,7 @@ class MainActivity : ComponentActivity() {
                     onClick = onShareFeatureCsv,
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text("Share Feature CSV")
+                    Text("Share Feature")
                 }
             }
 
