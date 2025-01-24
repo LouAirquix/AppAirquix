@@ -38,8 +38,6 @@ class MainActivity : ComponentActivity() {
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        // Berechtigungen anfragen
         checkAndRequestPermissions()
 
         setContent {
@@ -61,7 +59,7 @@ class MainActivity : ComponentActivity() {
                         onStartLogging = { startLoggingService() },
                         onStopLogging = { stopLoggingService() },
                         onClearLogs = { viewModel.clearAllLogs() },
-                        onShareLogs = { shareCsvLogs() },
+                        onShareLogs = { shareLogsCsv() },
                         onShareFeatureCsv = { shareFeatureCsv() }
                     )
                 }
@@ -69,9 +67,9 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // -----------------------------------------------------------
-    // UI-Composables
-    // -----------------------------------------------------------
+    // ---------------------------
+    // UI
+    // ---------------------------
     @Composable
     fun MainScreen(
         modifier: Modifier = Modifier,
@@ -87,18 +85,19 @@ class MainActivity : ComponentActivity() {
                 .fillMaxSize()
                 .padding(16.dp)
         ) {
+            // Erste Reihe: Start & Stop
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                Button(
+                ElevatedButton(
                     onClick = onStartLogging,
                     enabled = !viewModel.isLogging.value,
                     modifier = Modifier.weight(1f)
                 ) {
                     Text("Start")
                 }
-                Button(
+                ElevatedButton(
                     onClick = onStopLogging,
                     enabled = viewModel.isLogging.value,
                     modifier = Modifier.weight(1f)
@@ -109,23 +108,24 @@ class MainActivity : ComponentActivity() {
 
             Spacer(Modifier.height(16.dp))
 
+            // Zweite Reihe: Clear, Share CSV Logs, Share Feature
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Button(
+                ElevatedButton(
                     onClick = onClearLogs,
                     modifier = Modifier.weight(1f)
                 ) {
                     Text("Clear Logs")
                 }
-                Button(
+                ElevatedButton(
                     onClick = onShareLogs,
                     modifier = Modifier.weight(1f)
                 ) {
                     Text("Share CSV Logs")
                 }
-                Button(
+                ElevatedButton(
                     onClick = onShareFeatureCsv,
                     modifier = Modifier.weight(1f)
                 ) {
@@ -134,7 +134,6 @@ class MainActivity : ComponentActivity() {
             }
 
             Spacer(Modifier.height(24.dp))
-
             Text("Logs:", style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(8.dp))
 
@@ -152,34 +151,26 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * CSV-Parsing, damit wir die Felder korrekt erhalten,
-     * selbst wenn ein Feld doppelte Anführungszeichen oder Kommata enthält.
-     *
-     * Hier ein stark vereinfachter CSV-Parser:
-     * - Trennt Felder an Kommas,
-     * - beachtet Anführungszeichen und escaped Quotes.
+     * Einfacher CSV-Parser, damit wir Anführungszeichen und Kommas sauber berücksichtigen können.
      */
     private fun parseCsvLine(line: String): List<String> {
         val result = mutableListOf<String>()
         var current = StringBuilder()
         var insideQuotes = false
         var i = 0
-
         while (i < line.length) {
             val c = line[i]
             when {
                 c == '"' -> {
+                    // Wenn innen und das nächste ist ebenfalls ", dann ist es escaped
                     if (insideQuotes && i + 1 < line.length && line[i + 1] == '"') {
-                        // Escaped quote "" -> füge ein " hinzu
                         current.append('"')
                         i++
                     } else {
-                        // Toggle insideQuotes
                         insideQuotes = !insideQuotes
                     }
                 }
                 c == ',' && !insideQuotes -> {
-                    // Feldende
                     result.add(current.toString())
                     current = StringBuilder()
                 }
@@ -189,28 +180,15 @@ class MainActivity : ComponentActivity() {
             }
             i++
         }
-        // letztes Feld
         result.add(current.toString())
         return result
     }
 
     @Composable
     fun LogItem(logLine: String) {
-        // Unsere CSV hat 11 Spalten:
-        //  0: timestamp
-        //  1: ENV
-        //  2: ENV_confidence
-        //  3: ACT
-        //  4: ACT_confidence
-        //  5: YAMNET_top1
-        //  6: top1_conf
-        //  7: YAMNET_top2
-        //  8: top2_conf
-        //  9: YAMNET_top3
-        // 10: top3_conf
+        // 11 Felder: time, env, env_conf, act, act_conf, top1, top1_conf, top2, top2_conf, top3, top3_conf
         val parts = remember(logLine) { parseCsvLine(logLine) }
-
-        val timestamp = parts.getOrNull(0) ?: ""
+        val timeStr = parts.getOrNull(0) ?: ""
         val env = parts.getOrNull(1) ?: ""
         val envConf = parts.getOrNull(2) ?: ""
         val act = parts.getOrNull(3) ?: ""
@@ -231,7 +209,7 @@ class MainActivity : ComponentActivity() {
             )
         ) {
             Column(modifier = Modifier.padding(8.dp)) {
-                Text("Timestamp: $timestamp", style = MaterialTheme.typography.bodySmall)
+                Text("Timestamp: $timeStr", style = MaterialTheme.typography.bodySmall)
                 Text("Environment: $env (conf: $envConf)")
                 Text("Activity: $act (conf: $actConf)")
                 Text("Top-1: $top1Label (conf: $top1Conf)")
@@ -241,13 +219,11 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // -----------------------------------------------------------
-    // Hilfsfunktionen
-    // -----------------------------------------------------------
-
+    // ---------------------------
+    // Berechtigungen
+    // ---------------------------
     private fun checkAndRequestPermissions() {
         val needed = mutableListOf<String>()
-
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
             != PackageManager.PERMISSION_GRANTED
         ) {
@@ -287,15 +263,13 @@ class MainActivity : ComponentActivity() {
         stopService(intent)
     }
 
-    private fun shareCsvLogs() {
+    private fun shareLogsCsv() {
         val vm = (applicationContext as AirquixApplication).getMainViewModel()
         val csvFile = vm.getLogsCsvFile()
-
         if (!csvFile.exists()) {
             Toast.makeText(this, "No CSV logs to share.", Toast.LENGTH_SHORT).show()
             return
         }
-
         val uri = androidx.core.content.FileProvider.getUriForFile(
             this,
             packageName + ".provider",
@@ -312,12 +286,10 @@ class MainActivity : ComponentActivity() {
     private fun shareFeatureCsv() {
         val vm = (applicationContext as AirquixApplication).getMainViewModel()
         val csvFile = vm.getFeatureCsvFile()
-
         if (!csvFile.exists()) {
             Toast.makeText(this, "No Feature CSV to share.", Toast.LENGTH_SHORT).show()
             return
         }
-
         val uri = androidx.core.content.FileProvider.getUriForFile(
             this,
             packageName + ".provider",

@@ -31,7 +31,6 @@ class LoggingService : LifecycleService() {
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
-    // ViewModel
     private lateinit var viewModel: MainViewModel
 
     // Activity Recognition
@@ -46,7 +45,7 @@ class LoggingService : LifecycleService() {
     private var audioRecord: AudioRecord? = null
     private var yamNetJob: Job? = null
 
-    // Erlaubte Label-Indizes
+    // Gewünschte Label-Indices
     private val allowedLabelIndices = setOf(
         303,304,305,308,310,311,312,313,314,317,318,319,320,321,323,324,325,326,327,328,335,
         344,345,346,347,348,349,350,351,352,353,354,355,
@@ -55,7 +54,6 @@ class LoggingService : LifecycleService() {
 
     override fun onCreate() {
         super.onCreate()
-
         val app = applicationContext as AirquixApplication
         viewModel = app.getMainViewModel()
         viewModel.isLogging.value = true
@@ -245,12 +243,12 @@ class LoggingService : LifecycleService() {
                     tensor.load(audioRecord!!)
                     val outputs = audioClassifier!!.classify(tensor)
 
-                    // Labels filtern
+                    // Gewünschte Indizes filtern
                     val filtered = outputs[0].categories.filter { c ->
                         allowedLabelIndices.contains(c.index)
                     }
 
-                    // Top 3
+                    // Top-3
                     val top3 = filtered.sortedByDescending { it.score }.take(3)
                     val top3LabelConf = top3.map { category ->
                         MainViewModel.LabelConfidence(
@@ -297,6 +295,7 @@ class LoggingService : LifecycleService() {
                 val actConf = viewModel.detectedActivity.value?.confidence ?: 0
                 val yamTop3 = viewModel.currentYamnetTop3.value
 
+                // Pro Sekunde ins CSV
                 viewModel.appendLog(
                     timeStr = timeStr,
                     env = env,
