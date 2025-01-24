@@ -31,14 +31,14 @@ class LoggingService : LifecycleService() {
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
-    // Referenz auf unser App-ViewModel
+    // ViewModel
     private lateinit var viewModel: MainViewModel
 
-    // ActivityRecognitionClient
+    // Activity Recognition
     private lateinit var activityRecognitionClient: ActivityRecognitionClient
     private var activityPendingIntent: PendingIntent? = null
 
-    // Kamera-Provider
+    // Kamera
     private var cameraProvider: ProcessCameraProvider? = null
 
     // YamNet
@@ -46,47 +46,33 @@ class LoggingService : LifecycleService() {
     private var audioRecord: AudioRecord? = null
     private var yamNetJob: Job? = null
 
+    // Erlaubte Label-Indizes
+    private val allowedLabelIndices = setOf(
+        303,304,305,308,310,311,312,313,314,317,318,319,320,321,323,324,325,326,327,328,335,
+        344,345,346,347,348,349,350,351,352,353,354,355,
+        500,501,502,503,504
+    )
+
     override fun onCreate() {
         super.onCreate()
 
-        // Hole das ViewModel aus der AirquixApplication
         val app = applicationContext as AirquixApplication
         viewModel = app.getMainViewModel()
-
-        // Setze Flag isLogging auf true
         viewModel.isLogging.value = true
 
-        // Starte Notification für Foreground Service
         startForegroundServiceNotification()
-
-        // 1) Starte Activity Recognition (BroadcastReceiver ruft dann viewModel.updateDetectedActivity(...) auf)
         startActivityRecognition()
-
-        // 2) Richte die Kamera-Analyse ein
         setupCamera()
-
-        // 3) Starte YamNet-Audio-Klassifikation
         startYamnetClassification()
-
-        // 4) Starte periodisches Logging in die CSV
         startPeriodicLogging()
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        // Alle Koroutinen stoppen
         serviceScope.cancel()
-
-        // Activity Recognition stoppen
         stopActivityRecognition()
-
-        // Kamera stoppen
         stopCamera()
-
-        // YamNet Klassifikation stoppen
         stopYamnet()
-
-        // Flag
         viewModel.isLogging.value = false
     }
 
@@ -111,7 +97,6 @@ class LoggingService : LifecycleService() {
             }
         }
 
-        // Damit der Nutzer beim Tippen auf die Notification wieder in MainActivity landet:
         val notificationIntent = Intent(this, MainActivity::class.java)
         val pendingIntent = PendingIntent.getActivity(
             this,
@@ -135,13 +120,11 @@ class LoggingService : LifecycleService() {
 
     // --------------------- ACTIVITY RECOGNITION ---------------------
     private fun startActivityRecognition() {
-        // Stelle sicher, dass die nötige Berechtigung vorhanden ist
         if (!hasActivityRecognitionPermission()) {
             Log.e("LoggingService", "Missing Activity Recognition permission.")
             stopSelf()
             return
         }
-
         activityRecognitionClient = ActivityRecognition.getClient(this)
 
         val intent = Intent(this, ActivityRecognitionReceiver::class.java)
@@ -155,7 +138,6 @@ class LoggingService : LifecycleService() {
         activityPendingIntent = pending
 
         try {
-            // Anfordern von Updates alle 5 Sekunden
             activityRecognitionClient.requestActivityUpdates(5000, pending)
             Log.d("LoggingService", "Activity Recognition gestartet.")
         } catch (e: SecurityException) {
@@ -182,7 +164,6 @@ class LoggingService : LifecycleService() {
             ContextCompat.checkSelfPermission(this, Manifest.permission.ACTIVITY_RECOGNITION) ==
                     PackageManager.PERMISSION_GRANTED
         } else {
-            // Für Android 9 und darunter prüfen wir stattdessen FINE/COARSE LOCATION
             ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) ==
                     PackageManager.PERMISSION_GRANTED ||
                     ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) ==
@@ -190,7 +171,7 @@ class LoggingService : LifecycleService() {
         }
     }
 
-    // --------------------- KAMERA (Umgebungserkennung) ---------------------
+    // --------------------- KAMERA ---------------------
     private fun setupCamera() {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
         cameraProviderFuture.addListener({
@@ -198,12 +179,10 @@ class LoggingService : LifecycleService() {
 
             val preview = Preview.Builder().build()
 
-            // ImageAnalysis => MLKit ImageLabeling
             val analyzer = ImageAnalysis.Builder()
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                 .build()
 
-            // Dieser Analyzer ruft EnvironmentDetector auf und aktualisiert das ViewModel
             analyzer.setAnalyzer(
                 Executors.newSingleThreadExecutor(),
                 ImageLabelAnalyzer { labels ->
@@ -213,13 +192,9 @@ class LoggingService : LifecycleService() {
                 }
             )
 
-            // Da wir kein Preview anzeigen, nutzen wir eine Dummy-Surface
             preview.setSurfaceProvider { request ->
                 val texture = SurfaceTexture(0)
-                texture.setDefaultBufferSize(
-                    request.resolution.width,
-                    request.resolution.height
-                )
+                texture.setDefaultBufferSize(request.resolution.width, request.resolution.height)
                 val surface = Surface(texture)
                 request.provideSurface(surface, ContextCompat.getMainExecutor(this)) {
                     surface.release()
@@ -227,9 +202,7 @@ class LoggingService : LifecycleService() {
                 }
             }
 
-            // Standardmäßig die Rückkamera
             val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
-
             try {
                 cameraProvider?.unbindAll()
                 cameraProvider?.bindToLifecycle(
@@ -255,11 +228,9 @@ class LoggingService : LifecycleService() {
     // --------------------- YAMNET AUDIO-KLASSIFIKATION ---------------------
     private fun startYamnetClassification() {
         try {
-            // Lade das Modell aus assets/
             val modelPath = "lite-model_yamnet_classification_tflite_1.tflite"
             audioClassifier = AudioClassifier.createFromFile(this, modelPath)
 
-            // Erzeuge ein AudioRecord-Objekt
             audioRecord = audioClassifier?.createAudioRecord()
             audioRecord?.startRecording()
 
@@ -269,25 +240,26 @@ class LoggingService : LifecycleService() {
                 return
             }
 
-            // Alle 500 ms Audio lesen & klassifizieren
             yamNetJob = serviceScope.launch(Dispatchers.Default) {
                 while (isActive) {
                     tensor.load(audioRecord!!)
                     val outputs = audioClassifier!!.classify(tensor)
 
-                    // Filtern nach score > 0.3
-                    val filtered = outputs[0].categories
-                        .filter { it.score > 0.3f }
-                        .sortedByDescending { it.score }
-
-                    if (filtered.isNotEmpty()) {
-                        val top = filtered.first()
-                        viewModel.currentYamnetLabel.value = top.label
-                        viewModel.currentYamnetConfidence.value = top.score
-                    } else {
-                        viewModel.currentYamnetLabel.value = "No sound >0.3"
-                        viewModel.currentYamnetConfidence.value = 0f
+                    // Labels filtern
+                    val filtered = outputs[0].categories.filter { c ->
+                        allowedLabelIndices.contains(c.index)
                     }
+
+                    // Top 3
+                    val top3 = filtered.sortedByDescending { it.score }.take(3)
+                    val top3LabelConf = top3.map { category ->
+                        MainViewModel.LabelConfidence(
+                            label = category.label,
+                            confidence = category.score
+                        )
+                    }
+
+                    viewModel.currentYamnetTop3.value = top3LabelConf
 
                     delay(500)
                 }
@@ -312,40 +284,27 @@ class LoggingService : LifecycleService() {
     // --------------------- PERIODISCHES LOGGING ---------------------
     private fun startPeriodicLogging() {
         serviceScope.launch {
-            // Wir verwenden das Locale des Geräts für das Datum, aber US für Dezimalstellen
             val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
-
             while (isActive) {
-                delay(1000) // Logge jede Sekunde
+                delay(1000) // jede Sekunde
 
                 val now = System.currentTimeMillis()
                 val timeStr = sdf.format(Date(now))
 
-                // Hole alle aktuellen Werte aus dem ViewModel
                 val env = viewModel.currentEnvironment.value ?: "Unknown"
                 val envConf = viewModel.currentEnvironmentConfidence.value
                 val act = viewModel.detectedActivity.value?.activityType ?: "Unknown"
                 val actConf = viewModel.detectedActivity.value?.confidence ?: 0
-                val yamnetLabel = viewModel.currentYamnetLabel.value
-                val yamnetConf = viewModel.currentYamnetConfidence.value
+                val yamTop3 = viewModel.currentYamnetTop3.value
 
-                // Debug-Ausgabe, um zu prüfen, was wir loggen
-                Log.d(
-                    "LoggingService",
-                    "Logging data: $timeStr, $env, $envConf, $act, $actConf, $yamnetLabel, $yamnetConf"
+                viewModel.appendLog(
+                    timeStr = timeStr,
+                    env = env,
+                    envConf = envConf,
+                    act = act,
+                    actConf = actConf,
+                    yamTop3 = yamTop3
                 )
-
-                // CSV-Zeile mit Locale.US für Dezimalstellen, damit '.' statt ',' genutzt wird
-                val csvLine = "$timeStr," +
-                        "$env," +
-                        "${"%.2f".format(Locale.US, envConf)}," +
-                        "$act," +
-                        "$actConf," +
-                        "$yamnetLabel," +
-                        "${"%.2f".format(Locale.US, yamnetConf)}"
-
-                // Log in ViewModel-Liste und in CSV
-                viewModel.appendLog(csvLine)
             }
         }
     }
