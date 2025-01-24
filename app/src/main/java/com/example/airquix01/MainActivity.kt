@@ -1,24 +1,30 @@
 package com.example.airquix01
 
 import android.Manifest
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight // [4] Import für FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.example.airquix01.ui.theme.MymlkitappTheme
 
@@ -46,10 +52,22 @@ class MainActivity : ComponentActivity() {
                 val app = context.applicationContext as AirquixApplication
                 val viewModel = app.getMainViewModel()
 
+                // [2] State für Read-Me-Dialog hinzufügen
+                var showReadMe by remember { mutableStateOf(false) }
+
                 Scaffold(
                     topBar = {
                         SmallTopAppBar(
-                            title = { Text("Airquix01App - LMU") }
+                            title = { Text("Airquix01App - LMU") },
+                            // [3] Read-Me-Button in der TopAppBar hinzufügen
+                            actions = {
+                                IconButton(onClick = { showReadMe = true }) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Info,
+                                        contentDescription = "Read Me"
+                                    )
+                                }
+                            }
                         )
                     }
                 ) { innerPadding ->
@@ -62,6 +80,14 @@ class MainActivity : ComponentActivity() {
                         onShareLogs = { shareLogsCsv() },
                         onShareFeatureCsv = { shareFeatureCsv() }
                     )
+
+                    // [4] Read-Me-Dialog anzeigen, wenn showReadMe true ist
+                    if (showReadMe) {
+                        ReadMeDialog(
+                            onDismiss = { showReadMe = false },
+                            context = context
+                        )
+                    }
                 }
             }
         }
@@ -216,6 +242,59 @@ class MainActivity : ComponentActivity() {
                 Text("Top-2: $top2Label (conf: $top2Conf)")
                 Text("Top-3: $top3Label (conf: $top3Conf)")
             }
+        }
+    }
+
+    // ---------------------------
+    // ReadMe-Dialog und Hilfsfunktion hinzufügen
+    // ---------------------------
+
+    @Composable
+    fun ReadMeDialog(onDismiss: () -> Unit, context: Context) {
+        // Lade den Inhalt der Read-Me-Datei aus den Assets
+        val readMeContent = remember { loadReadMeFromAssets(context) }
+
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            title = { Text(text = "Read Me", fontWeight = FontWeight.Bold) },
+            text = {
+                // Scrollbare Textanzeige
+                Box(
+                    modifier = Modifier
+                        .heightIn(max = 400.dp) // Begrenze die maximale Höhe
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        Text(
+                            text = readMeContent,
+                            fontSize = 16.sp,
+                            lineHeight = 20.sp,
+                            textAlign = TextAlign.Start
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = onDismiss) {
+                    Text("Close")
+                }
+            }
+        )
+    }
+
+    // Hilfsfunktion zum Laden der Read-Me-Datei aus den Assets
+    fun loadReadMeFromAssets(context: Context): String {
+        return try {
+            val inputStream = context.assets.open("readme.txt")
+            val size = inputStream.available()
+            val buffer = ByteArray(size)
+            inputStream.read(buffer)
+            inputStream.close()
+            String(buffer)
+        } catch (e: Exception) {
+            "Read-Me-Datei konnte nicht geladen werden."
         }
     }
 
