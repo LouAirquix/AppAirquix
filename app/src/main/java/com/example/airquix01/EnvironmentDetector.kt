@@ -109,7 +109,6 @@ object EnvironmentDetector {
                 text.contains("flora") ||
                 text.contains("ruins") ||
                 text.contains("horse") ||
-                text.contains("crowd") ||
                 text.contains("motorcycle") ||
                 text.contains("lighthouse") ||
                 text.contains("river") ||
