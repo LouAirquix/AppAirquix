@@ -63,7 +63,6 @@ object EnvironmentDetector {
                 text.contains("standing") ||
                 text.contains("television") ||
                 text.contains("musical instrument") ||
-                text.contains("wall") ||
                 text.contains("couch")
 
                 ) {
