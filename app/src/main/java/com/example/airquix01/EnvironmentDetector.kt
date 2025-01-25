@@ -27,7 +27,43 @@ object EnvironmentDetector {
                 text.contains("desk") ||
                 text.contains("chair") ||
                 text.contains("furniture") ||
-                text.contains("infrastructure") ||
+                text.contains("circus") ||
+                text.contains("factory") ||
+                text.contains("cushion") ||
+                text.contains("casino") ||
+                text.contains("stairs") ||
+                text.contains("computer") ||
+                text.contains("cookware and bakeware") ||
+                text.contains("pier") ||
+                text.contains("caving") ||
+                text.contains("cave") ||
+                text.contains("cabinetry") ||
+                text.contains("nightclub") ||
+                text.contains("cuisine") ||
+                text.contains("stuffed toy") ||
+                text.contains("crochet") ||
+                text.contains("cutlery") ||
+                text.contains("couch") ||
+                text.contains("blackboard") ||
+                text.contains("whiteboard") ||
+                text.contains("factory") ||
+                text.contains("bathing") ||
+                text.contains("gymnastics") ||
+                text.contains("bunk bed") ||
+                text.contains("tableware") ||
+                text.contains("curtain") ||
+                text.contains("ballroom") ||
+                text.contains("tablecloth") ||
+                text.contains("piano") ||
+                text.contains("class") ||
+                text.contains("subwoofer") ||
+                text.contains("lampshade") ||
+                text.contains("shelf") ||
+                text.contains("lunch") ||
+                text.contains("standing") ||
+                text.contains("television") ||
+                text.contains("musical instrument") ||
+                text.contains("wall") ||
                 text.contains("couch")
 
                 ) {
@@ -41,13 +77,67 @@ object EnvironmentDetector {
                 text.contains("sky") ||
                 text.contains("lake") ||
                 text.contains("beach") ||
-                text.contains("field") ||
+                text.contains("bridge") ||
                 text.contains("mountain") ||
                 text.contains("garden") ||
                 text.contains("car") ||
-                text.contains("asphalt")
+                text.contains("asphalt") ||
+                text.contains("infrastructure") ||
+                text.contains("cliff") ||
+                text.contains("safari") ||
+                text.contains("boat") ||
+                text.contains("sunset") ||
+                text.contains("rock") ||
+                text.contains("sunset") ||
+                text.contains("tower") ||
+                text.contains("playground") ||
+                text.contains("construction") ||
+                text.contains("picnic") ||
+                text.contains("wheelbarrow") ||
+                text.contains("windshield") ||
+                text.contains("pier") ||
+                text.contains("cycling") ||
+                text.contains("track") ||
+                text.contains("cattle") ||
+                text.contains("jungle") ||
+                text.contains("skyline") ||
+                text.contains("desert") ||
+                text.contains("sledding") ||
+                text.contains("glacier") ||
+                text.contains("bumper") ||
+                text.contains("trunk") ||
+                text.contains("forest") ||
+                text.contains("flora") ||
+                text.contains("ruins") ||
+                text.contains("horse") ||
+                text.contains("crowd") ||
+                text.contains("motorcycle") ||
+                text.contains("lighthouse") ||
+                text.contains("river") ||
+                text.contains("road") ||
+                text.contains("roof") ||
+                text.contains("swimming") ||
+                text.contains("skiing") ||
+                text.contains("vehicle") ||
+                text.contains("wheel") ||
+                text.contains("wakeboarding") ||
+                text.contains("ranch") ||
+                text.contains("snowboarding") ||
+                text.contains("cathedral") ||
+                text.contains("skyscraper") ||
+                text.contains("bench") ||
+                text.contains("farm") ||
+                text.contains("van") ||
+                text.contains("tire") ||
+                text.contains("prairie") ||
+                text.contains("sailboat") ||
+                text.contains("rickshaw") ||
+                text.contains("barn") ||
+                text.contains("storm") ||
+                text.contains("monument") ||
+                text.contains("space")
 
-            ) {
+                    ) {
                 outsideScore = max(outsideScore, score)
             }
         }
