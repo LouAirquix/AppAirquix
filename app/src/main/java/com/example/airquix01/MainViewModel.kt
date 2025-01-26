@@ -10,6 +10,7 @@ import java.io.FileWriter
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.max
 
 class MainViewModel : ViewModel() {
 
@@ -79,7 +80,7 @@ class MainViewModel : ViewModel() {
             yamBuffer.add(yamTop3)
             counter++
 
-            // Nach 120 Einträgen = 2 Minuten (bei 1Hz) erstellen wir eine Feature-Zeile
+            // Nach 120 Einträgen = 2 Minuten (bei 1Hz)
             if (counter >= 120) {
                 createFeatureVectorAndSave()
                 envBuffer.clear()
@@ -89,9 +90,6 @@ class MainViewModel : ViewModel() {
             }
         }
 
-        /**
-         * Schreibt eine Zeile in feature_vectors.csv
-         */
         private fun createFeatureVectorAndSave() {
             val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
                 .format(Date(System.currentTimeMillis()))
@@ -103,19 +101,53 @@ class MainViewModel : ViewModel() {
             // 3) Top-3 YAMNet
             val (top3Labels, top3Confs) = calculateTop3Yamnet()
 
-            // CSV-Aufbau: time, envLabel, actLabel, top1, top1Conf, top2, top2Conf, top3, top3Conf
+            // Durchschnittliche Environment-Confidence
+            val envConfAvg = calculateEnvConfidenceAverage()
+
+            // Durchschnittliche Activity-Confidence
+            val actConfAvg = calculateActivityConfidenceAverage()
+
+            // Top-1 und Top-2 global
+            val (globalTop2Labels, globalTop2Confs) = calculateGlobalTop2Yamnet()
+
+            // Top-1 und Top-2 single (maximaler Confidence pro Label)
+            val (singleTop2Labels, singleTop2Confs) = calculateSingleTop2Yamnet()
+
+            // CSV-Aufbau
             val csvLine = buildString {
+                // Zeit, Env, Env_Conf, Act, Act_Conf
                 append(csvEscape(timestamp)).append(",")
                 append(csvEscape(envLabel)).append(",")
+                append("%.2f".format(Locale.US, envConfAvg)).append(",")
                 append(csvEscape(actLabel)).append(",")
+                append("%.2f".format(Locale.US, actConfAvg)).append(",")
+
+                // top-3 (YamNet) -> labels plus Conf
                 for (i in 0..2) {
                     val lbl = top3Labels.getOrNull(i) ?: "none"
                     val conf = top3Confs.getOrNull(i) ?: 0f
                     append(csvEscape(lbl)).append(",")
-                    append(csvEscape("%.2f".format(Locale.US, conf)))
-                    if (i < 2) append(",")
+                    append("%.2f".format(Locale.US, conf))
+                    if (i < 2) append(",") // Komma, wenn noch nicht beim letzten
+                }
+
+                // globalTop2 (Label+Conf) - 2 Stück
+                for (i in 0..1) {
+                    val lbl = globalTop2Labels.getOrNull(i) ?: "none"
+                    val conf = globalTop2Confs.getOrNull(i) ?: 0f
+                    append(",").append(csvEscape(lbl)).append(",")
+                    append("%.2f".format(Locale.US, conf))
+                }
+
+                // singleTop2 (Label+Conf) - 2 Stück
+                for (i in 0..1) {
+                    val lbl = singleTop2Labels.getOrNull(i) ?: "none"
+                    val conf = singleTop2Confs.getOrNull(i) ?: 0f
+                    append(",").append(csvEscape(lbl)).append(",")
+                    append("%.2f".format(Locale.US, conf))
                 }
             }
+
             saveFeatureVectorLine(csvLine)
         }
 
@@ -154,15 +186,18 @@ class MainViewModel : ViewModel() {
             }
         }
 
+        /**
+         * Ermittelt die Top-3 Labels anhand einer Mischung aus Häufigkeit und
+         * durchschnittlicher Confidence (wie in deinem Ursprungs-Code).
+         */
         private fun calculateTop3Yamnet(): Pair<List<String>, List<Float>> {
             val labelCount = mutableMapOf<String, Int>()
             val labelConfSum = mutableMapOf<String, Float>()
 
             yamBuffer.forEach { top3List ->
                 top3List.forEach { labelConf ->
-                    val label = labelConf.label
-                    labelCount[label] = labelCount.getOrDefault(label, 0) + 1
-                    labelConfSum[label] = labelConfSum.getOrDefault(label, 0f) + labelConf.confidence
+                    labelCount[labelConf.label] = labelCount.getOrDefault(labelConf.label, 0) + 1
+                    labelConfSum[labelConf.label] = labelConfSum.getOrDefault(labelConf.label, 0f) + labelConf.confidence
                 }
             }
             if (labelCount.isEmpty()) return Pair(emptyList(), emptyList())
@@ -178,6 +213,69 @@ class MainViewModel : ViewModel() {
             val top3 = sortedLabels.take(3)
             val top3Confs = top3.map { labelAvgConf[it] ?: 0f }
             return Pair(top3, top3Confs)
+        }
+
+        /**
+         * Durchschnittliche Environment-Confidence
+         */
+        private fun calculateEnvConfidenceAverage(): Float {
+            if (envBuffer.isEmpty()) return 0f
+            // sumOf(...) existiert nicht direkt für Float -> erst zu Double, dann zurück zu Float
+            val sum = envBuffer.sumOf { it.second.toDouble() }.toFloat()
+            return sum / envBuffer.size
+        }
+
+        /**
+         * Durchschnittliche Activity-Confidence
+         */
+        private fun calculateActivityConfidenceAverage(): Float {
+            if (actBuffer.isEmpty()) return 0f
+            val sum = actBuffer.sumOf { it.confidence.toDouble() }.toFloat()
+            return sum / actBuffer.size
+        }
+
+        /**
+         * "Global" = Wir summieren alle Confidences pro Label
+         * und nehmen daraus die Top-2
+         */
+        private fun calculateGlobalTop2Yamnet(): Pair<List<String>, List<Float>> {
+            val labelSum = mutableMapOf<String, Float>()
+
+            yamBuffer.forEach { top3List ->
+                top3List.forEach { labelConf ->
+                    labelSum[labelConf.label] = labelSum.getOrDefault(labelConf.label, 0f) + labelConf.confidence
+                }
+            }
+            if (labelSum.isEmpty()) return Pair(emptyList(), emptyList())
+
+            val sorted = labelSum.entries.sortedByDescending { it.value }
+            val top2 = sorted.take(2)
+            val top2Labels = top2.map { it.key }
+            val top2Confs = top2.map { it.value }
+            return Pair(top2Labels, top2Confs)
+        }
+
+        /**
+         * "Single" = Wir nehmen den jeweils maximalen Confidence-Wert pro Label
+         * und schauen dann, welche 2 Labels am höchsten waren.
+         */
+        private fun calculateSingleTop2Yamnet(): Pair<List<String>, List<Float>> {
+            val labelMax = mutableMapOf<String, Float>()
+
+            yamBuffer.forEach { top3List ->
+                top3List.forEach { labelConf ->
+                    val oldVal = labelMax[labelConf.label] ?: 0f
+                    labelMax[labelConf.label] = max(oldVal, labelConf.confidence)
+                }
+            }
+            if (labelMax.isEmpty()) return Pair(emptyList(), emptyList())
+
+            // Sortieren nach dem Maximalwert absteigend
+            val sorted = labelMax.entries.sortedByDescending { it.value }
+            val top2 = sorted.take(2)
+            val top2Labels = top2.map { it.key }
+            val top2Confs = top2.map { it.value }
+            return Pair(top2Labels, top2Confs)
         }
     }
 
@@ -210,7 +308,6 @@ class MainViewModel : ViewModel() {
         actConf: Int,
         yamTop3: List<LabelConfidence>
     ) {
-        // => time,env,env_conf,act,act_conf,top1,top1Conf,top2,top2Conf,top3,top3Conf
         val top1 = yamTop3.getOrNull(0)
         val top2 = yamTop3.getOrNull(1)
         val top3 = yamTop3.getOrNull(2)
@@ -237,7 +334,7 @@ class MainViewModel : ViewModel() {
             append(top3Conf)
         }
 
-        logList.add(line)
+        logList.add(0, line)
 
         // In Logs-CSV schreiben
         try {
@@ -277,9 +374,20 @@ class MainViewModel : ViewModel() {
             val dir = AirquixApplication.appContext.getExternalFilesDir(null)
             featureCsvFile = File(dir, featureCsvFileName)
             if (!featureCsvFile!!.exists()) {
+                // Angepasster Header mit neuen Spalten-Bezeichnungen:
                 featureCsvFile!!.writeText(
-                    "timestamp,ENV_label,ACT_label," +
-                            "YAMNET_top1,top1_conf,YAMNET_top2,top2_conf,YAMNET_top3,top3_conf\n"
+                    "timestamp," +
+                            "ENV_label," +
+                            "env_conf_avg," +
+                            "ACT_label," +
+                            "act_conf_avg," +
+                            "YAMNET_top1,top1_conf," +
+                            "YAMNET_top2,top2_conf," +
+                            "YAMNET_top3,top3_conf," +
+                            "YAMNET_top1_global_label,top1_global_conf," +
+                            "YAMNET_top2_global_label,top2_global_conf," +
+                            "YAMNET_top1_single_label,top1_single_conf," +
+                            "YAMNET_top2_single_label,top2_single_conf\n"
                 )
             }
         }
@@ -318,8 +426,18 @@ class MainViewModel : ViewModel() {
             featureFile.delete()
         }
         featureFile.writeText(
-            "timestamp,ENV_label,ACT_label," +
-                    "YAMNET_top1,top1_conf,YAMNET_top2,top2_conf,YAMNET_top3,top3_conf\n"
+            "timestamp," +
+                    "ENV_label," +
+                    "env_conf_avg," +
+                    "ACT_label," +
+                    "act_conf_avg," +
+                    "YAMNET_top1,top1_conf," +
+                    "YAMNET_top2,top2_conf," +
+                    "YAMNET_top3,top3_conf," +
+                    "YAMNET_top1_global_label,top1_global_conf," +
+                    "YAMNET_top2_global_label,top2_global_conf," +
+                    "YAMNET_top1_single_label,top1_single_conf," +
+                    "YAMNET_top2_single_label,top2_single_conf\n"
         )
     }
 }
