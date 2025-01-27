@@ -62,6 +62,9 @@ object EnvironmentDetector {
                 text.contains("lunch") ||
                 text.contains("standing") ||
                 text.contains("television") ||
+                text.contains("product") ||
+                text.contains("food") ||
+                text.contains("fast food") ||
                 text.contains("musical instrument") ||
                 text.contains("couch")
 
