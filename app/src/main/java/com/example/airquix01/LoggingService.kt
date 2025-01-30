@@ -45,7 +45,12 @@ class LoggingService : LifecycleService() {
     private var audioRecord: AudioRecord? = null
     private var yamNetJob: Job? = null
 
-    // Gewünschte Label-Indices
+    // NEU: Vehicle-Sounds (optional)
+    private var vehicleClassifier: AudioClassifier? = null
+    private var vehicleAudioRecord: AudioRecord? = null
+    private var vehicleJob: Job? = null
+
+    // Gewünschte Label-Indices (YAMNet)
     private val allowedLabelIndices = setOf(
         106,107,110,116,122,277,278,279,283,285,288,289,295,298,300,301,302,303,304,
         305,308,310,311,312,313,314,315,316,317,318,319,320,321,323,324,325,326,327,
@@ -63,15 +68,23 @@ class LoggingService : LifecycleService() {
         startActivityRecognition()
         setupCamera()
         startYamnetClassification()
+
+        // Optional: starte Vehicle-Sound-Classification
+        // (Nur wenn du wirklich ein 2. TFLite-Modell für die Fahrzeuge hast.)
+        startVehicleClassification()
+
         startPeriodicLogging()
     }
 
     override fun onDestroy() {
         super.onDestroy()
         serviceScope.cancel()
+
         stopActivityRecognition()
         stopCamera()
         stopYamnet()
+        stopVehicleClassification()
+
         viewModel.isLogging.value = false
     }
 
@@ -280,6 +293,56 @@ class LoggingService : LifecycleService() {
         Log.d("LoggingService", "YamNet Klassifikation gestoppt.")
     }
 
+    // --------------------- (OPTIONAL) VEHICLE-KLASSIFIKATION ---------------------
+    private fun startVehicleClassification() {
+        try {
+            // Beispiel: "my_vehicle_sounds.tflite" in assets/
+            val vehicleModelPath = "vehicle_sounds.tflite"
+            vehicleClassifier = AudioClassifier.createFromFile(this, vehicleModelPath)
+
+            vehicleAudioRecord = vehicleClassifier?.createAudioRecord()
+            vehicleAudioRecord?.startRecording()
+
+            val tensor = vehicleClassifier?.createInputTensorAudio()
+            if (tensor == null || vehicleAudioRecord == null) {
+                Log.e("LoggingService", "Vehicle classifier oder vehicleAudioRecord ist null!")
+                return
+            }
+
+            vehicleJob = serviceScope.launch(Dispatchers.Default) {
+                while (isActive) {
+                    tensor.load(vehicleAudioRecord!!)
+                    val outputs = vehicleClassifier!!.classify(tensor)
+                    val categories = outputs[0].categories
+
+                    // Hier z.B. Top-1
+                    val top1 = categories.maxByOrNull { it.score }
+                    if (top1 != null && top1.score > 0.5f) {
+                        viewModel.currentVehicleTop1.value = MainViewModel.LabelConfidence(top1.label, top1.score)
+                    } else {
+                        viewModel.currentVehicleTop1.value = MainViewModel.LabelConfidence("none", 0f)
+                    }
+
+                    delay(500)
+                }
+            }
+            Log.d("LoggingService", "Vehicle Klassifikation gestartet.")
+        } catch (e: Exception) {
+            e.printStackTrace()
+            Log.e("LoggingService", "Fehler beim Starten der Vehicle-Klassifikation: ${e.message}")
+        }
+    }
+
+    private fun stopVehicleClassification() {
+        vehicleJob?.cancel()
+        vehicleJob = null
+        vehicleAudioRecord?.stop()
+        vehicleAudioRecord?.release()
+        vehicleAudioRecord = null
+        vehicleClassifier = null
+        Log.d("LoggingService", "Vehicle Klassifikation gestoppt.")
+    }
+
     // --------------------- PERIODISCHES LOGGING ---------------------
     private fun startPeriodicLogging() {
         serviceScope.launch {
@@ -296,7 +359,8 @@ class LoggingService : LifecycleService() {
                 val actConf = viewModel.detectedActivity.value?.confidence ?: 0
                 val yamTop3 = viewModel.currentYamnetTop3.value
 
-                // Pro Sekunde ins CSV
+                // => JETZT: Vehicle-Top1 wird intern in viewModel.currentVehicleTop1 gespeichert.
+                // appendLog liest diese intern (siehe im ViewModel).
                 viewModel.appendLog(
                     timeStr = timeStr,
                     env = env,

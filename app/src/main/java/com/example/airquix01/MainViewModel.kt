@@ -27,6 +27,10 @@ class MainViewModel : ViewModel() {
     // YAMNet: Top-3 pro Sekunde
     val currentYamnetTop3 = mutableStateOf<List<LabelConfidence>>(emptyList())
 
+    // NEU: Vehicle-Top-1
+    // (wird jede Sekunde von LoggingService aktualisiert)
+    val currentVehicleTop1 = mutableStateOf<LabelConfidence?>(null)
+
     // Logs (nur für die UI)
     val logList = mutableStateListOf<String>()
 
@@ -188,7 +192,7 @@ class MainViewModel : ViewModel() {
 
         /**
          * Ermittelt die Top-3 Labels anhand einer Mischung aus Häufigkeit und
-         * durchschnittlicher Confidence (wie in deinem Ursprungs-Code).
+         * durchschnittlicher Confidence.
          */
         private fun calculateTop3Yamnet(): Pair<List<String>, List<Float>> {
             val labelCount = mutableMapOf<String, Int>()
@@ -197,7 +201,8 @@ class MainViewModel : ViewModel() {
             yamBuffer.forEach { top3List ->
                 top3List.forEach { labelConf ->
                     labelCount[labelConf.label] = labelCount.getOrDefault(labelConf.label, 0) + 1
-                    labelConfSum[labelConf.label] = labelConfSum.getOrDefault(labelConf.label, 0f) + labelConf.confidence
+                    labelConfSum[labelConf.label] =
+                        labelConfSum.getOrDefault(labelConf.label, 0f) + labelConf.confidence
                 }
             }
             if (labelCount.isEmpty()) return Pair(emptyList(), emptyList())
@@ -215,19 +220,12 @@ class MainViewModel : ViewModel() {
             return Pair(top3, top3Confs)
         }
 
-        /**
-         * Durchschnittliche Environment-Confidence
-         */
         private fun calculateEnvConfidenceAverage(): Float {
             if (envBuffer.isEmpty()) return 0f
-            // sumOf(...) existiert nicht direkt für Float -> erst zu Double, dann zurück zu Float
             val sum = envBuffer.sumOf { it.second.toDouble() }.toFloat()
             return sum / envBuffer.size
         }
 
-        /**
-         * Durchschnittliche Activity-Confidence
-         */
         private fun calculateActivityConfidenceAverage(): Float {
             if (actBuffer.isEmpty()) return 0f
             val sum = actBuffer.sumOf { it.confidence.toDouble() }.toFloat()
@@ -243,7 +241,8 @@ class MainViewModel : ViewModel() {
 
             yamBuffer.forEach { top3List ->
                 top3List.forEach { labelConf ->
-                    labelSum[labelConf.label] = labelSum.getOrDefault(labelConf.label, 0f) + labelConf.confidence
+                    labelSum[labelConf.label] =
+                        labelSum.getOrDefault(labelConf.label, 0f) + labelConf.confidence
                 }
             }
             if (labelSum.isEmpty()) return Pair(emptyList(), emptyList())
@@ -270,7 +269,6 @@ class MainViewModel : ViewModel() {
             }
             if (labelMax.isEmpty()) return Pair(emptyList(), emptyList())
 
-            // Sortieren nach dem Maximalwert absteigend
             val sorted = labelMax.entries.sortedByDescending { it.value }
             val top2 = sorted.take(2)
             val top2Labels = top2.map { it.key }
@@ -308,10 +306,18 @@ class MainViewModel : ViewModel() {
         actConf: Int,
         yamTop3: List<LabelConfidence>
     ) {
+        // 1) YAMNet
         val top1 = yamTop3.getOrNull(0)
         val top2 = yamTop3.getOrNull(1)
         val top3 = yamTop3.getOrNull(2)
 
+        // 2) Vehicle
+        val veh = currentVehicleTop1.value
+        val vehLabel = veh?.label ?: "none"
+        val vehConf = veh?.confidence ?: 0f
+
+        // -> Wir erweitern die vorhandene Logzeile:
+        // ... +  "VEHICLE_label, vehicle_conf" am Ende
         val line = buildString {
             append(csvEscape(timeStr)).append(",")
             append(csvEscape(env)).append(",")
@@ -332,6 +338,10 @@ class MainViewModel : ViewModel() {
             append(top2Conf).append(",")
             append(top3Label).append(",")
             append(top3Conf)
+
+            // NEUE Spalten: Vehicle-Top1
+            append(",").append(csvEscape(vehLabel)).append(",")
+            append("%.2f".format(Locale.US, vehConf))
         }
 
         logList.add(0, line)
@@ -346,7 +356,7 @@ class MainViewModel : ViewModel() {
             e.printStackTrace()
         }
 
-        // Dem Aggregator hinzufügen -> alle 2 Min => Feature-Vektor
+        // => Aggregator so lassen wie bisher, wir verändern ihn NICHT
         aggregator.addData(env, envConf, detectedActivity.value, yamTop3)
 
         Log.d("MainViewModel", "LOGGED -> $line")
@@ -360,9 +370,12 @@ class MainViewModel : ViewModel() {
             val dir = AirquixApplication.appContext.getExternalFilesDir(null)
             logsCsvFile = File(dir, logsCsvFileName)
             if (!logsCsvFile!!.exists()) {
+                // NEUER Header mit 2 neuen Spalten am Ende:
+                // vehicle_label, vehicle_conf
                 logsCsvFile!!.writeText(
                     "timestamp,ENV,ENV_confidence,ACT,ACT_confidence," +
-                            "YAMNET_top1,top1_conf,YAMNET_top2,top2_conf,YAMNET_top3,top3_conf\n"
+                            "YAMNET_top1,top1_conf,YAMNET_top2,top2_conf,YAMNET_top3,top3_conf," +
+                            "VEHICLE_label,vehicle_conf\n"
                 )
             }
         }
@@ -374,7 +387,7 @@ class MainViewModel : ViewModel() {
             val dir = AirquixApplication.appContext.getExternalFilesDir(null)
             featureCsvFile = File(dir, featureCsvFileName)
             if (!featureCsvFile!!.exists()) {
-                // Angepasster Header mit neuen Spalten-Bezeichnungen:
+                // Bleibt unverändert -> aggregator
                 featureCsvFile!!.writeText(
                     "timestamp," +
                             "ENV_label," +
@@ -416,9 +429,11 @@ class MainViewModel : ViewModel() {
         if (logsFile.exists()) {
             logsFile.delete()
         }
+        // Anpassen des Headers => auch hier Vehicle-Spalten
         logsFile.writeText(
             "timestamp,ENV,ENV_confidence,ACT,ACT_confidence," +
-                    "YAMNET_top1,top1_conf,YAMNET_top2,top2_conf,YAMNET_top3,top3_conf\n"
+                    "YAMNET_top1,top1_conf,YAMNET_top2,top2_conf,YAMNET_top3,top3_conf," +
+                    "VEHICLE_label,vehicle_conf\n"
         )
 
         val featureFile = getFeatureCsvFile()

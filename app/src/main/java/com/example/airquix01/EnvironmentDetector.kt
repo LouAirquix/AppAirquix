@@ -56,19 +56,24 @@ object EnvironmentDetector {
                 text.contains("tablecloth") ||
                 text.contains("piano") ||
                 text.contains("class") ||
+                text.contains("crowd") ||
                 text.contains("subwoofer") ||
                 text.contains("lampshade") ||
                 text.contains("shelf") ||
+                text.contains("ballroom") ||
+                text.contains("metal") ||
+                text.contains("loveseat") ||
                 text.contains("lunch") ||
                 text.contains("standing") ||
                 text.contains("television") ||
                 text.contains("product") ||
                 text.contains("food") ||
                 text.contains("fast food") ||
+                text.contains("train") ||
                 text.contains("musical instrument") ||
                 text.contains("couch")
 
-                ) {
+            ) {
                 insideScore = max(insideScore, score)
             }
             if (text.contains("tree") ||
@@ -119,7 +124,6 @@ object EnvironmentDetector {
                 text.contains("roof") ||
                 text.contains("swimming") ||
                 text.contains("skiing") ||
-                text.contains("vehicle") ||
                 text.contains("wheel") ||
                 text.contains("wakeboarding") ||
                 text.contains("ranch") ||
@@ -138,7 +142,7 @@ object EnvironmentDetector {
                 text.contains("monument") ||
                 text.contains("space")
 
-                    ) {
+            ) {
                 outsideScore = max(outsideScore, score)
             }
         }

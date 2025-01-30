@@ -226,6 +226,9 @@ class MainActivity : ComponentActivity() {
         val top3Label = parts.getOrNull(9) ?: ""
         val top3Conf = parts.getOrNull(10) ?: ""
 
+        val vehLabel = parts.getOrNull(11) ?: ""
+        val vehConf = parts.getOrNull(12) ?: ""
+
         Card(
             modifier = Modifier
                 .fillMaxWidth()
@@ -241,6 +244,9 @@ class MainActivity : ComponentActivity() {
                 Text("Top-1: $top1Label (conf: $top1Conf)")
                 Text("Top-2: $top2Label (conf: $top2Conf)")
                 Text("Top-3: $top3Label (conf: $top3Conf)")
+
+                Text("Vehicle (Top-1): $vehLabel (conf: $vehConf)")
+
             }
         }
     }
