@@ -11,17 +11,17 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight // [4] Import für FontWeight
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -52,14 +52,13 @@ class MainActivity : ComponentActivity() {
                 val app = context.applicationContext as AirquixApplication
                 val viewModel = app.getMainViewModel()
 
-                // [2] State für Read-Me-Dialog hinzufügen
+                // State für Read-Me-Dialog
                 var showReadMe by remember { mutableStateOf(false) }
 
                 Scaffold(
                     topBar = {
                         SmallTopAppBar(
                             title = { Text("Airquix01App - LMU") },
-                            // [3] Read-Me-Button in der TopAppBar hinzufügen
                             actions = {
                                 IconButton(onClick = { showReadMe = true }) {
                                     Icon(
@@ -81,7 +80,6 @@ class MainActivity : ComponentActivity() {
                         onShareFeatureCsv = { shareFeatureCsv() }
                     )
 
-                    // [4] Read-Me-Dialog anzeigen, wenn showReadMe true ist
                     if (showReadMe) {
                         ReadMeDialog(
                             onDismiss = { showReadMe = false },
@@ -177,7 +175,7 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * Einfacher CSV-Parser, damit wir Anführungszeichen und Kommas sauber berücksichtigen können.
+     * Einfacher CSV-Parser, der Anführungszeichen und Kommas korrekt behandelt.
      */
     private fun parseCsvLine(line: String): List<String> {
         val result = mutableListOf<String>()
@@ -188,7 +186,6 @@ class MainActivity : ComponentActivity() {
             val c = line[i]
             when {
                 c == '"' -> {
-                    // Wenn innen und das nächste ist ebenfalls ", dann ist es escaped
                     if (insideQuotes && i + 1 < line.length && line[i + 1] == '"') {
                         current.append('"')
                         i++
@@ -212,22 +209,31 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     fun LogItem(logLine: String) {
-        // 11 Felder: time, env, env_conf, act, act_conf, top1, top1_conf, top2, top2_conf, top3, top3_conf
+        // Angepasst: Wir erwarten jetzt 15 Felder:
+        // 0: timestamp
+        // 1: PLACES_top1, 2: places_top1_conf
+        // 3: PLACES_top2, 4: places_top2_conf
+        // 5: ACT, 6: ACT_confidence
+        // 7: YAMNET_top1, 8: top1_conf
+        // 9: YAMNET_top2, 10: top2_conf
+        // 11: YAMNET_top3, 12: top3_conf
+        // 13: VEHICLE_label, 14: vehicle_conf
         val parts = remember(logLine) { parseCsvLine(logLine) }
-        val timeStr = parts.getOrNull(0) ?: ""
-        val env = parts.getOrNull(1) ?: ""
-        val envConf = parts.getOrNull(2) ?: ""
-        val act = parts.getOrNull(3) ?: ""
-        val actConf = parts.getOrNull(4) ?: ""
-        val top1Label = parts.getOrNull(5) ?: ""
-        val top1Conf = parts.getOrNull(6) ?: ""
-        val top2Label = parts.getOrNull(7) ?: ""
-        val top2Conf = parts.getOrNull(8) ?: ""
-        val top3Label = parts.getOrNull(9) ?: ""
-        val top3Conf = parts.getOrNull(10) ?: ""
-
-        val vehLabel = parts.getOrNull(11) ?: ""
-        val vehConf = parts.getOrNull(12) ?: ""
+        val timestamp = parts.getOrNull(0) ?: ""
+        val placesTop1 = parts.getOrNull(1) ?: ""
+        val placesTop1Conf = parts.getOrNull(2) ?: ""
+        val placesTop2 = parts.getOrNull(3) ?: ""
+        val placesTop2Conf = parts.getOrNull(4) ?: ""
+        val act = parts.getOrNull(5) ?: ""
+        val actConf = parts.getOrNull(6) ?: ""
+        val yamTop1 = parts.getOrNull(7) ?: ""
+        val yamTop1Conf = parts.getOrNull(8) ?: ""
+        val yamTop2 = parts.getOrNull(9) ?: ""
+        val yamTop2Conf = parts.getOrNull(10) ?: ""
+        val yamTop3 = parts.getOrNull(11) ?: ""
+        val yamTop3Conf = parts.getOrNull(12) ?: ""
+        val vehLabel = parts.getOrNull(13) ?: ""
+        val vehConf = parts.getOrNull(14) ?: ""
 
         Card(
             modifier = Modifier
@@ -238,41 +244,28 @@ class MainActivity : ComponentActivity() {
             )
         ) {
             Column(modifier = Modifier.padding(8.dp)) {
-                Text("Timestamp: $timeStr", style = MaterialTheme.typography.bodySmall)
-                Text("Environment: $env (conf: $envConf)")
+                Text("Timestamp: $timestamp", style = MaterialTheme.typography.bodySmall)
+                Text("Places Top-1: $placesTop1 (conf: $placesTop1Conf)")
+                Text("Places Top-2: $placesTop2 (conf: $placesTop2Conf)")
                 Text("Activity: $act (conf: $actConf)")
-                Text("Top-1: $top1Label (conf: $top1Conf)")
-                Text("Top-2: $top2Label (conf: $top2Conf)")
-                Text("Top-3: $top3Label (conf: $top3Conf)")
-
+                Text("YAMNET Top-1: $yamTop1 (conf: $yamTop1Conf)")
+                Text("YAMNET Top-2: $yamTop2 (conf: $yamTop2Conf)")
+                Text("YAMNET Top-3: $yamTop3 (conf: $yamTop3Conf)")
                 Text("Vehicle (Top-1): $vehLabel (conf: $vehConf)")
-
             }
         }
     }
 
-    // ---------------------------
-    // ReadMe-Dialog und Hilfsfunktion hinzufügen
-    // ---------------------------
-
     @Composable
     fun ReadMeDialog(onDismiss: () -> Unit, context: Context) {
-        // Lade den Inhalt der Read-Me-Datei aus den Assets
         val readMeContent = remember { loadReadMeFromAssets(context) }
 
         AlertDialog(
             onDismissRequest = onDismiss,
             title = { Text(text = "Read Me", fontWeight = FontWeight.Bold) },
             text = {
-                // Scrollbare Textanzeige
-                Box(
-                    modifier = Modifier
-                        .heightIn(max = 400.dp) // Begrenze die maximale Höhe
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .verticalScroll(rememberScrollState())
-                    ) {
+                Box(modifier = Modifier.heightIn(max = 400.dp)) {
+                    Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                         Text(
                             text = readMeContent,
                             fontSize = 16.sp,
@@ -290,7 +283,6 @@ class MainActivity : ComponentActivity() {
         )
     }
 
-    // Hilfsfunktion zum Laden der Read-Me-Datei aus den Assets
     fun loadReadMeFromAssets(context: Context): String {
         return try {
             val inputStream = context.assets.open("readme.txt")

@@ -83,6 +83,8 @@ dependencies {
 
     implementation("org.tensorflow:tensorflow-lite-task-audio:0.2.0")
 
+    implementation("org.pytorch:pytorch_android:1.13.1")
+    implementation("org.pytorch:pytorch_android_torchvision:1.13.1")
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
