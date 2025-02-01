@@ -47,6 +47,14 @@ import java.util.Locale
 import java.util.concurrent.Executors
 import kotlin.math.exp
 
+// Neue Datenklasse, die Top 4 Ergebnisse enthält
+data class PlacesResults(
+    val top1: Pair<String, Float>,
+    val top2: Pair<String, Float>,
+    val top3: Pair<String, Float>,
+    val top4: Pair<String, Float>
+)
+
 class LoggingService : LifecycleService() {
 
     // Service-spezifischer CoroutineScope (Default-Dispatcher)
@@ -63,7 +71,7 @@ class LoggingService : LifecycleService() {
     private val cameraExecutor = Executors.newSingleThreadExecutor()
 
     // Aufnahmeintervall: 15 Sekunden
-    private val captureIntervalMillis = 5000L
+    private val captureIntervalMillis = 15000L
 
     // Places365 (AlexNet) Modell und Kategorien
     private var classificationModel: Module? = null
@@ -296,12 +304,17 @@ class LoggingService : LifecycleService() {
         if (bitmap != null && classificationModel != null && classificationCategories.isNotEmpty()) {
             Log.d("LoggingService", "Image processed. Bitmap size: ${bitmap.width} x ${bitmap.height}")
             serviceScope.launch(Dispatchers.Default) {
-                val (top1, top2) = classifyImageAlexNet(bitmap, classificationModel!!, classificationCategories)
+                // Erhalte nun die Top 4 Ergebnisse
+                val results = classifyImageAlexNet(bitmap, classificationModel!!, classificationCategories)
                 withContext(Dispatchers.Main) {
-                    viewModel.currentPlacesTop1.value = top1.first
-                    viewModel.currentPlacesTop1Confidence.value = top1.second
-                    viewModel.currentPlacesTop2.value = top2.first
-                    viewModel.currentPlacesTop2Confidence.value = top2.second
+                    viewModel.currentPlacesTop1.value = results.top1.first
+                    viewModel.currentPlacesTop1Confidence.value = results.top1.second
+                    viewModel.currentPlacesTop2.value = results.top2.first
+                    viewModel.currentPlacesTop2Confidence.value = results.top2.second
+                    viewModel.currentPlacesTop3.value = results.top3.first
+                    viewModel.currentPlacesTop3Confidence.value = results.top3.second
+                    viewModel.currentPlacesTop4.value = results.top4.first
+                    viewModel.currentPlacesTop4Confidence.value = results.top4.second
                 }
             }
         } else {
@@ -321,13 +334,13 @@ class LoggingService : LifecycleService() {
 
     /**
      * Führt die AlexNet-Klassifikation für Places365 durch.
-     * Skaliert das Bitmap auf 224x224, erstellt einen Tensor, führt Inferenz durch und ermittelt die Top-2.
+     * Skaliert das Bitmap auf 224x224, erstellt einen Tensor, führt Inferenz durch und ermittelt die Top-4.
      */
     private fun classifyImageAlexNet(
         bitmap: Bitmap,
         model: Module,
         categories: List<String>
-    ): Pair<Pair<String, Float>, Pair<String, Float>> {
+    ): PlacesResults {
         val resizedBitmap = Bitmap.createScaledBitmap(bitmap, 224, 224, false)
         val inputTensor = TensorImageUtils.bitmapToFloat32Tensor(
             resizedBitmap,
@@ -337,9 +350,12 @@ class LoggingService : LifecycleService() {
         val outputTensor = model.forward(IValue.from(inputTensor)).toTensor()
         val outputArray = outputTensor.dataAsFloatArray
         val probabilities = softmax(outputArray)
-        val top2 = probabilities.withIndex().sortedByDescending { it.value }.take(2)
-        val top1 = top2.getOrNull(0)
-        val top2Result = top2.getOrNull(1)
+        val top4List = probabilities.withIndex().sortedByDescending { it.value }.take(4)
+
+        val top1 = top4List.getOrNull(0)
+        val top2 = top4List.getOrNull(1)
+        val top3 = top4List.getOrNull(2)
+        val top4 = top4List.getOrNull(3)
 
         fun cleanLabel(raw: String): String {
             return raw.replace(Regex("^/\\w/"), "")
@@ -350,9 +366,19 @@ class LoggingService : LifecycleService() {
 
         val label1 = if (top1 != null) cleanLabel(categories.getOrElse(top1.index) { "Unknown" }) else "Unknown"
         val conf1 = top1?.value ?: 0f
-        val label2 = if (top2Result != null) cleanLabel(categories.getOrElse(top2Result.index) { "Unknown" }) else "Unknown"
-        val conf2 = top2Result?.value ?: 0f
-        return Pair(Pair(label1, conf1), Pair(label2, conf2))
+        val label2 = if (top2 != null) cleanLabel(categories.getOrElse(top2.index) { "Unknown" }) else "Unknown"
+        val conf2 = top2?.value ?: 0f
+        val label3 = if (top3 != null) cleanLabel(categories.getOrElse(top3.index) { "Unknown" }) else "Unknown"
+        val conf3 = top3?.value ?: 0f
+        val label4 = if (top4 != null) cleanLabel(categories.getOrElse(top4.index) { "Unknown" }) else "Unknown"
+        val conf4 = top4?.value ?: 0f
+
+        return PlacesResults(
+            top1 = Pair(label1, conf1),
+            top2 = Pair(label2, conf2),
+            top3 = Pair(label3, conf3),
+            top4 = Pair(label4, conf4)
+        )
     }
 
     /**
@@ -482,10 +508,16 @@ class LoggingService : LifecycleService() {
                 delay(captureIntervalMillis)
                 val now = System.currentTimeMillis()
                 val timeStr = sdf.format(Date(now))
+                // Hole alle Places365-Ergebnisse
                 val placesTop1 = viewModel.currentPlacesTop1.value ?: "Unknown"
                 val placesTop1Conf = viewModel.currentPlacesTop1Confidence.value
                 val placesTop2 = viewModel.currentPlacesTop2.value ?: "Unknown"
                 val placesTop2Conf = viewModel.currentPlacesTop2Confidence.value
+                val placesTop3 = viewModel.currentPlacesTop3.value ?: "Unknown"
+                val placesTop3Conf = viewModel.currentPlacesTop3Confidence.value
+                val placesTop4 = viewModel.currentPlacesTop4.value ?: "Unknown"
+                val placesTop4Conf = viewModel.currentPlacesTop4Confidence.value
+
                 val act = viewModel.detectedActivity.value?.activityType ?: "Unknown"
                 val actConf = viewModel.detectedActivity.value?.confidence ?: 0
                 val yamTop3 = viewModel.currentYamnetTop3.value
@@ -496,6 +528,10 @@ class LoggingService : LifecycleService() {
                     placesTop1Conf = placesTop1Conf,
                     placesTop2 = placesTop2,
                     placesTop2Conf = placesTop2Conf,
+                    placesTop3 = placesTop3,
+                    placesTop3Conf = placesTop3Conf,
+                    placesTop4 = placesTop4,
+                    placesTop4Conf = placesTop4Conf,
                     act = act,
                     actConf = actConf,
                     yamTop3 = yamTop3,
