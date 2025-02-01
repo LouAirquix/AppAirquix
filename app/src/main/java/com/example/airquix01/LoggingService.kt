@@ -16,6 +16,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
+import android.util.Size
 import android.view.Surface
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
@@ -47,7 +48,7 @@ import java.util.Locale
 import java.util.concurrent.Executors
 import kotlin.math.exp
 
-// Neue Datenklasse, die Top 4 Ergebnisse enthält
+// Datenklasse für die Top-4 Ergebnisse von Places365
 data class PlacesResults(
     val top1: Pair<String, Float>,
     val top2: Pair<String, Float>,
@@ -70,19 +71,19 @@ class LoggingService : LifecycleService() {
     private lateinit var imageCapture: ImageCapture
     private val cameraExecutor = Executors.newSingleThreadExecutor()
 
-    // Aufnahmeintervall: 5 Sekunden
-    private val captureIntervalMillis = 5000L
+    // Aufnahmeintervall: 7 Sekunden
+    private val captureIntervalMillis = 7000L
 
     // Places365 (AlexNet) Modell und Kategorien
     private var classificationModel: Module? = null
     private var classificationCategories: List<String> = emptyList()
 
-    // YamNet Audio-Klassifikation (wie bisher)
+    // YamNet Audio-Klassifikation
     private var audioClassifier: org.tensorflow.lite.task.audio.classifier.AudioClassifier? = null
     private var audioRecord: android.media.AudioRecord? = null
     private var yamNetJob: Job? = null
 
-    // Vehicle Audio-Klassifikation (wie bisher)
+    // Vehicle Audio-Klassifikation
     private var vehicleClassifier: org.tensorflow.lite.task.audio.classifier.AudioClassifier? = null
     private var vehicleAudioRecord: android.media.AudioRecord? = null
     private var vehicleJob: Job? = null
@@ -111,7 +112,7 @@ class LoggingService : LifecycleService() {
 
         startForegroundServiceNotification()
         startActivityRecognition()
-        setupCamera() // In setupCamera() wird nach erfolgreicher Bindung startPeriodicImageCapture() aufgerufen.
+        setupCamera() // Nach erfolgreicher Kamera-Bindung wird startPeriodicImageCapture() aufgerufen.
         startYamNetClassification()
         startVehicleClassification()
         startPeriodicLogging()  // Logge alle 15 Sekunden
@@ -221,16 +222,19 @@ class LoggingService : LifecycleService() {
                 }
             }
 
-            // ImageCapture-Use Case: Liefert JPEG-Bilder
+            // Optimierter ImageCapture-Use Case: Maximale Qualität, Zielauflösung und (optional) Rotation
             imageCapture = ImageCapture.Builder()
-                .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+                .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
+                .setTargetResolution(Size(1920, 1080))
+                // Optional: Setze die Zielrotation, falls benötigt
+                //.setTargetRotation(Surface.ROTATION_0)
                 .build()
 
             val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
             try {
                 cameraProvider?.unbindAll()
                 cameraProvider?.bindToLifecycle(this, cameraSelector, preview, imageCapture)
-                Log.d("LoggingService", "Camera set up with ImageCapture.")
+                Log.d("LoggingService", "Camera set up with high quality ImageCapture.")
                 // Starte den periodischen Bildaufnahme-Job, nachdem imageCapture initialisiert ist
                 startPeriodicImageCapture()
             } catch (exc: Exception) {
@@ -249,6 +253,8 @@ class LoggingService : LifecycleService() {
     private fun startPeriodicImageCapture() {
         serviceScope.launch {
             while (isActive) {
+                // Kurzes Delay, um der Kamera Zeit zum Stabilisieren (z.B. Autofokus) zu geben
+                delay(300)
                 captureImage()
                 delay(captureIntervalMillis)
             }
@@ -259,6 +265,8 @@ class LoggingService : LifecycleService() {
      * Nimmt ein Bild mit ImageCapture auf, speichert es als JPEG in den Cache und verarbeitet es.
      */
     private fun captureImage() {
+        // Kurzer Sleep (auf dem Kamera-Thread) für zusätzliche Stabilisierung
+        Thread.sleep(300)
         val photoFile = File(cacheDir, "photo_${System.currentTimeMillis()}.jpg")
         val outputOptions = ImageCapture.OutputFileOptions.Builder(photoFile).build()
 
@@ -286,7 +294,7 @@ class LoggingService : LifecycleService() {
     private fun processCapturedImage(photoFile: File) {
         var bitmap = BitmapFactory.decodeFile(photoFile.absolutePath)
         if (bitmap != null) {
-            // Korrigiere die Bildorientierung anhand der EXIF-Daten
+            // Bildorientierung anhand der EXIF-Daten korrigieren
             try {
                 val exif = ExifInterface(photoFile.absolutePath)
                 val orientation = exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
@@ -297,14 +305,14 @@ class LoggingService : LifecycleService() {
                     else -> bitmap
                 }
             } catch (e: Exception) {
-                Log.e("LoggingService", "Fehler beim Korrigieren der Bildorientierung: ${e.message}")
+                Log.e("LoggingService", "Error correcting image orientation: ${e.message}")
             }
         }
 
         if (bitmap != null && classificationModel != null && classificationCategories.isNotEmpty()) {
             Log.d("LoggingService", "Image processed. Bitmap size: ${bitmap.width} x ${bitmap.height}")
             serviceScope.launch(Dispatchers.Default) {
-                // Erhalte nun die Top 4 Ergebnisse
+                // Erhalte die Top 4 Ergebnisse von Places365
                 val results = classifyImageAlexNet(bitmap, classificationModel!!, classificationCategories)
                 withContext(Dispatchers.Main) {
                     viewModel.currentPlacesTop1.value = results.top1.first
@@ -334,7 +342,7 @@ class LoggingService : LifecycleService() {
 
     /**
      * Führt die AlexNet-Klassifikation für Places365 durch.
-     * Skaliert das Bitmap auf 224x224, erstellt einen Tensor, führt Inferenz durch und ermittelt die Top-4.
+     * Skaliert das Bitmap auf 224x224, erstellt einen Tensor, führt Inferenz durch und ermittelt die Top 4.
      */
     private fun classifyImageAlexNet(
         bitmap: Bitmap,
@@ -538,5 +546,4 @@ class LoggingService : LifecycleService() {
             }
         }
     }
-
 }
