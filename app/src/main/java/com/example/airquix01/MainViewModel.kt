@@ -1,4 +1,3 @@
-// Datei: app/src/main/java/com/example/airquix01/MainViewModel.kt
 package com.example.airquix01
 
 import android.util.Log
@@ -17,7 +16,7 @@ class MainViewModel : ViewModel() {
     // Flag, ob Logging aktiv ist
     val isLogging = mutableStateOf(false)
 
-    // Neue Felder für Places365 (AlexNet) Ergebnisse
+    // Felder für Places365 (AlexNet) Ergebnisse
     val currentPlacesTop1 = mutableStateOf("Unknown")
     val currentPlacesTop1Confidence = mutableStateOf(0f)
     val currentPlacesTop2 = mutableStateOf("Unknown")
@@ -41,7 +40,7 @@ class MainViewModel : ViewModel() {
     private var logsCsvFile: File? = null
     private var featureCsvFile: File? = null
 
-    // Aggregator (hier aggregieren wir die Places-Ergebnisse)
+    // Aggregator (aggregiert die Places-, Activity- und YamNet-Daten)
     private val aggregator = TwoMinuteAggregator()
 
     data class DetectedActivityData(val activityType: String, val confidence: Int)
@@ -56,22 +55,15 @@ class MainViewModel : ViewModel() {
         }
     }
 
-    // Die CSV-Zeile soll folgende Reihenfolge haben:
+    // CSV-Zeile:
     // 0: timestamp
-    // 1: PLACES_top1
-    // 2: places_top1_conf
-    // 3: PLACES_top2
-    // 4: places_top2_conf
-    // 5: ACT
-    // 6: ACT_confidence
-    // 7: YAMNET_top1
-    // 8: top1_conf
-    // 9: YAMNET_top2
-    // 10: top2_conf
-    // 11: YAMNET_top3
-    // 12: top3_conf
-    // 13: VEHICLE_label
-    // 14: vehicle_conf
+    // 1: PLACES_top1, 2: places_top1_conf
+    // 3: PLACES_top2, 4: places_top2_conf
+    // 5: ACT, 6: ACT_confidence
+    // 7: YAMNET_top1, 8: top1_conf
+    // 9: YAMNET_top2, 10: top2_conf
+    // 11: YAMNET_top3, 12: top3_conf
+    // 13: VEHICLE_label, 14: vehicle_conf
     fun appendLog(
         timeStr: String,
         placesTop1: String,
@@ -91,7 +83,6 @@ class MainViewModel : ViewModel() {
             append("%.2f".format(Locale.US, placesTop2Conf)).append(",")
             append(csvEscape(act)).append(",")
             append(actConf).append(",")
-            // YamNet Top-3:
             val top1 = yamTop3.getOrNull(0)
             val top2 = yamTop3.getOrNull(1)
             val top3 = yamTop3.getOrNull(2)
@@ -107,7 +98,6 @@ class MainViewModel : ViewModel() {
             append(top2Conf).append(",")
             append(top3Label).append(",")
             append(top3Conf)
-            // Vehicle:
             append(",").append(csvEscape(veh?.label ?: "none")).append(",")
             append("%.2f".format(Locale.US, veh?.confidence ?: 0f))
         }
@@ -200,7 +190,7 @@ class MainViewModel : ViewModel() {
         )
     }
 
-    // Aggregator (unverändert – aggregiert die Places-, Activity- und YamNet-Daten)
+    // Aggregator (aggregiert Places-, Activity- und YamNet-Daten)
     inner class TwoMinuteAggregator {
         private val placesBuffer = mutableListOf<Pair<Pair<String, Float>, Pair<String, Float>>>()
         private val actBuffer = mutableListOf<DetectedActivityData>()

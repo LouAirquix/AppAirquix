@@ -1,8 +1,11 @@
-// Datei: app/src/main/java/com/example/airquix01/ui/LogItem.kt
 package com.example.airquix01.ui
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -37,15 +40,24 @@ fun LogItem(logLine: String) {
     val veh = parts.getOrNull(13) ?: ""
     val vehConf = parts.getOrNull(14) ?: ""
 
-    Column(modifier = Modifier.padding(8.dp)) {
-        Text("Timestamp: $timestamp")
-        Text("Places Top-1: $placesTop1 (conf: $placesTop1Conf)")
-        Text("Places Top-2: $placesTop2 (conf: $placesTop2Conf)")
-        Text("Activity: $act (conf: $actConf)")
-        Text("YAMNET Top-1: $yamTop1 (conf: $yamTop1Conf)")
-        Text("YAMNET Top-2: $yamTop2 (conf: $yamTop2Conf)")
-        Text("YAMNET Top-3: $yamTop3 (conf: $yamTop3Conf)")
-        Text("Vehicle (Top-1): $veh (conf: $vehConf)")
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Column(modifier = Modifier.padding(8.dp)) {
+            Text("Timestamp: $timestamp", style = MaterialTheme.typography.bodySmall)
+            Text("Places Top-1: $placesTop1 (conf: $placesTop1Conf)")
+            Text("Places Top-2: $placesTop2 (conf: $placesTop2Conf)")
+            Text("Activity: $act (conf: $actConf)")
+            Text("YAMNET Top-1: $yamTop1 (conf: $yamTop1Conf)")
+            Text("YAMNET Top-2: $yamTop2 (conf: $yamTop2Conf)")
+            Text("YAMNET Top-3: $yamTop3 (conf: $yamTop3Conf)")
+            Text("Vehicle (Top-1): $veh (conf: $vehConf)")
+        }
     }
 }
 
@@ -69,7 +81,9 @@ fun parseCsvLine(line: String): List<String> {
                 result.add(current.toString())
                 current = StringBuilder()
             }
-            else -> current.append(c)
+            else -> {
+                current.append(c)
+            }
         }
         i++
     }

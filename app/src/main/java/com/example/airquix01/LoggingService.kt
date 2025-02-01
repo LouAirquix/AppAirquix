@@ -1,4 +1,3 @@
-// Datei: app/src/main/java/com/example/airquix01/LoggingService.kt
 package com.example.airquix01
 
 import android.Manifest
@@ -10,30 +9,45 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.SurfaceTexture
+import android.net.Uri
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import android.view.Surface
-import androidx.camera.core.*
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageCapture
+import androidx.camera.core.ImageCaptureException
+import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleService
 import com.google.android.gms.location.ActivityRecognition
 import com.google.android.gms.location.ActivityRecognitionClient
-import kotlinx.coroutines.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.pytorch.IValue
 import org.pytorch.Module
 import org.pytorch.torchvision.TensorImageUtils
 import java.io.File
 import java.text.SimpleDateFormat
-import java.util.*
+import java.util.Date
+import java.util.Locale
 import java.util.concurrent.Executors
 import kotlin.math.exp
 
 class LoggingService : LifecycleService() {
 
+    // Service-spezifischer CoroutineScope (Default-Dispatcher)
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private lateinit var viewModel: MainViewModel
 
@@ -41,20 +55,29 @@ class LoggingService : LifecycleService() {
     private lateinit var activityRecognitionClient: ActivityRecognitionClient
     private var activityPendingIntent: PendingIntent? = null
 
-    // Kamera
+    // Kamera – Verwende den ImageCapture-Use Case (JPEG)
     private var cameraProvider: ProcessCameraProvider? = null
+    private lateinit var imageCapture: ImageCapture
+    private val cameraExecutor = Executors.newSingleThreadExecutor()
 
-    // YamNet Audio-Klassifikation (unverändert)
+    // Aufnahmeintervall: 15 Sekunden
+    private val captureIntervalMillis = 15000L
+
+    // Places365 (AlexNet) Modell und Kategorien
+    private var classificationModel: Module? = null
+    private var classificationCategories: List<String> = emptyList()
+
+    // YamNet Audio-Klassifikation (wie bisher)
     private var audioClassifier: org.tensorflow.lite.task.audio.classifier.AudioClassifier? = null
     private var audioRecord: android.media.AudioRecord? = null
     private var yamNetJob: Job? = null
 
-    // Vehicle Audio-Klassifikation (optional, unverändert)
+    // Vehicle Audio-Klassifikation (wie bisher)
     private var vehicleClassifier: org.tensorflow.lite.task.audio.classifier.AudioClassifier? = null
     private var vehicleAudioRecord: android.media.AudioRecord? = null
     private var vehicleJob: Job? = null
 
-    // Allowed label indices für YamNet
+    // Allowed label indices für YamNet (wie bisher)
     private val allowedLabelIndices = setOf(
         106, 107, 110, 116, 122, 277, 278, 279, 283, 285, 288, 289, 295, 298, 300, 301, 302, 303, 304,
         305, 308, 310, 311, 312, 313, 314, 315, 316, 317, 318, 319, 320, 321, 323, 324, 325, 326, 327,
@@ -62,59 +85,51 @@ class LoggingService : LifecycleService() {
         354, 355, 357, 358, 359, 378, 380, 500, 501, 502, 503, 504, 508, 517, 519, 520
     )
 
-    // Felder für das AlexNet Modell (Places365)
-    private var classificationModel: Module? = null
-    private var classificationCategories: List<String> = emptyList()
-
-    // Throttling: Nur alle 5 Sekunden ein Bild verarbeiten
-    private var lastPlacesClassificationTime: Long = 0
-
     override fun onCreate() {
         super.onCreate()
         val app = applicationContext as AirquixApplication
         viewModel = app.getMainViewModel()
         viewModel.isLogging.value = true
 
-        // Lade das AlexNet Modell und die Kategorienliste aus den Assets
+        // Modell und Kategorien für Places365 laden
         try {
             classificationModel = Module.load(assetFilePath("alexnet_places365_quantized.pt"))
             classificationCategories = loadCategories("categories_places365.txt")
             Log.d("LoggingService", "AlexNet model and categories loaded.")
         } catch (e: Exception) {
-            Log.e("LoggingService", "Error loading AlexNet model or categories", e)
+            Log.e("LoggingService", "Error loading Places365 model or categories", e)
         }
 
         startForegroundServiceNotification()
         startActivityRecognition()
-        setupCamera() // Hier wird der neue Analyzer genutzt
-        startYamnetClassification()
+        setupCamera() // In setupCamera() wird nach erfolgreicher Bindung startPeriodicImageCapture() aufgerufen.
+        startYamNetClassification()
         startVehicleClassification()
-        startPeriodicLogging() // Loggen erfolgt jetzt alle 5 Sekunden
+        startPeriodicLogging()  // Logge alle 15 Sekunden
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        serviceScope.cancel()
-        stopActivityRecognition()
-        stopCamera()
-        stopYamnet()
-        stopVehicleClassification()
         viewModel.isLogging.value = false
+        serviceScope.cancel()
+        cameraProvider?.unbindAll()
+        cameraExecutor.shutdown()
     }
 
     override fun onBind(intent: Intent): IBinder? {
-        return super.onBind(intent)
+        super.onBind(intent)
+        return null
     }
 
     // ---------------- Foreground Notification ----------------
     private fun startForegroundServiceNotification() {
         val channelId = "LoggingServiceChannel"
         val channelName = "Logging Service"
-        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            if (nm.getNotificationChannel(channelId) == null) {
+            if (notificationManager.getNotificationChannel(channelId) == null) {
                 val channel = NotificationChannel(channelId, channelName, NotificationManager.IMPORTANCE_LOW)
-                nm.createNotificationChannel(channel)
+                notificationManager.createNotificationChannel(channel)
             }
         }
         val notificationIntent = Intent(this, MainActivity::class.java)
@@ -124,11 +139,11 @@ class LoggingService : LifecycleService() {
         )
         val notification: Notification = NotificationCompat.Builder(this, channelId)
             .setContentTitle("Logging active")
-            .setContentText("Collecting camera, activity and audio data…")
+            .setContentText("Capturing images and processing labels every 15 sec")
             .setSmallIcon(android.R.drawable.ic_menu_camera)
             .setContentIntent(pendingIntent)
             .build()
-        startForeground(111, notification)
+        startForeground(123, notification)
     }
 
     // ---------------- Activity Recognition ----------------
@@ -179,21 +194,14 @@ class LoggingService : LifecycleService() {
         }
     }
 
-    // ---------------- Kamera Setup mit neuem AlexNet Analyzer ----------------
+    // ---------------- Kamera Setup: Preview & ImageCapture ----------------
     private fun setupCamera() {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
         cameraProviderFuture.addListener({
             cameraProvider = cameraProviderFuture.get()
+
+            // Dummy-Preview (wird benötigt, auch wenn wir nur Bilder aufnehmen)
             val preview = Preview.Builder().build()
-            val analyzer = ImageAnalysis.Builder()
-                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                .build()
-
-            // Verwende einen Analyzer, der die AlexNet-Klassifikation ausführt
-            analyzer.setAnalyzer(Executors.newSingleThreadExecutor()) { imageProxy ->
-                processImageProxyWithAlexNet(imageProxy)
-            }
-
             preview.setSurfaceProvider { request ->
                 val texture = SurfaceTexture(0)
                 texture.setDefaultBufferSize(request.resolution.width, request.resolution.height)
@@ -204,16 +212,18 @@ class LoggingService : LifecycleService() {
                 }
             }
 
+            // ImageCapture-Use Case: Liefert JPEG-Bilder
+            imageCapture = ImageCapture.Builder()
+                .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+                .build()
+
             val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
             try {
                 cameraProvider?.unbindAll()
-                cameraProvider?.bindToLifecycle(
-                    this,
-                    cameraSelector,
-                    preview,
-                    analyzer
-                )
-                Log.d("LoggingService", "Camera set up with AlexNet analyzer.")
+                cameraProvider?.bindToLifecycle(this, cameraSelector, preview, imageCapture)
+                Log.d("LoggingService", "Camera set up with ImageCapture.")
+                // Starte den periodischen Bildaufnahme-Job, nachdem imageCapture initialisiert ist
+                startPeriodicImageCapture()
             } catch (exc: Exception) {
                 Log.e("LoggingService", "Error setting up camera: ${exc.message}")
             }
@@ -226,26 +236,49 @@ class LoggingService : LifecycleService() {
         Log.d("LoggingService", "Camera stopped.")
     }
 
-    // ---------------- Verarbeitung des Kamera-Frames mittels AlexNet (mit Throttling) ----------------
-    private fun processImageProxyWithAlexNet(imageProxy: ImageProxy) {
-        // Throttling: Nur alle 5 Sekunden ein Bild verarbeiten
-        val currentTime = System.currentTimeMillis()
-        if (currentTime - lastPlacesClassificationTime < 5000) {
-            imageProxy.close()
-            return
+    // ---------------- Periodische Bildaufnahme (alle 15 Sekunden) ----------------
+    private fun startPeriodicImageCapture() {
+        serviceScope.launch {
+            while (isActive) {
+                captureImage()
+                delay(captureIntervalMillis)
+            }
         }
-        lastPlacesClassificationTime = currentTime
+    }
 
-        val mediaImage = imageProxy.image ?: run {
-            imageProxy.close()
-            return
-        }
-        // Konvertiere ImageProxy in ein Bitmap (verwende eine Hilfsfunktion aus ImageUtils)
-        val bitmap = ImageUtils.imageToBitmap(imageProxy)
-        imageProxy.close()
+    /**
+     * Nimmt ein Bild mit ImageCapture auf, speichert es als JPEG in den Cache und verarbeitet es.
+     */
+    private fun captureImage() {
+        val photoFile = File(cacheDir, "photo_${System.currentTimeMillis()}.jpg")
+        val outputOptions = ImageCapture.OutputFileOptions.Builder(photoFile).build()
+
+        imageCapture?.takePicture(
+            outputOptions,
+            cameraExecutor,
+            object : ImageCapture.OnImageSavedCallback {
+                override fun onError(exception: ImageCaptureException) {
+                    Log.e("LoggingService", "Photo capture failed: ${exception.message}", exception)
+                }
+
+                override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
+                    val savedUri: Uri = outputFileResults.savedUri ?: Uri.fromFile(photoFile)
+                    Log.d("LoggingService", "Photo captured: $savedUri")
+                    processCapturedImage(photoFile)
+                }
+            }
+        )
+    }
+
+    /**
+     * Dekodiert das JPEG aus der Datei in ein Bitmap, führt die Places365-Klassifikation (AlexNet) aus
+     * und speichert die Ergebnisse im ViewModel.
+     */
+    private fun processCapturedImage(photoFile: File) {
+        val bitmap = BitmapFactory.decodeFile(photoFile.absolutePath)
         if (bitmap != null && classificationModel != null && classificationCategories.isNotEmpty()) {
+            Log.d("LoggingService", "Image processed. Bitmap size: ${bitmap.width} x ${bitmap.height}")
             serviceScope.launch(Dispatchers.Default) {
-                // Klassifiziere das Bild – erhalte Top-1 und Top-2 Ergebnisse
                 val (top1, top2) = classifyImageAlexNet(bitmap, classificationModel!!, classificationCategories)
                 withContext(Dispatchers.Main) {
                     viewModel.currentPlacesTop1.value = top1.first
@@ -254,16 +287,21 @@ class LoggingService : LifecycleService() {
                     viewModel.currentPlacesTop2Confidence.value = top2.second
                 }
             }
+        } else {
+            Log.e("LoggingService", "Failed to decode captured image or model/cats not loaded.")
         }
+        photoFile.delete()
     }
 
-    // ---------------- AlexNet Bildklassifikation mit Label-Bereinigung ----------------
+    /**
+     * Führt die AlexNet-Klassifikation für Places365 durch.
+     * Skaliert das Bitmap auf 224x224, erstellt einen Tensor, führt Inferenz durch und ermittelt die Top-2.
+     */
     private fun classifyImageAlexNet(
         bitmap: Bitmap,
         model: Module,
         categories: List<String>
     ): Pair<Pair<String, Float>, Pair<String, Float>> {
-        // Skalierung auf 224x224, wie vom Modell erwartet
         val resizedBitmap = Bitmap.createScaledBitmap(bitmap, 224, 224, false)
         val inputTensor = TensorImageUtils.bitmapToFloat32Tensor(
             resizedBitmap,
@@ -277,26 +315,23 @@ class LoggingService : LifecycleService() {
         val top1 = top2.getOrNull(0)
         val top2Result = top2.getOrNull(1)
 
-        // Neue cleanLabel-Funktion: Entfernt jedes führende "/<Buchstabe>/",
-        // entfernt den am Ende stehenden Zahlenteil und ersetzt Unterstriche durch Leerzeichen.
         fun cleanLabel(raw: String): String {
-            return raw.replace(Regex("^/\\w/"), "")   // entfernt z.B. "/c/" oder "/b/"
-                .replace(Regex("\\s+\\d+\$"), "") // entfernt am Ende stehende Zahlen
-                .replace('_', ' ')              // ersetzt Unterstriche durch Leerzeichen
+            return raw.replace(Regex("^/\\w/"), "")
+                .replace(Regex("\\s+\\d+\$"), "")
+                .replace('_', ' ')
                 .trim()
         }
 
-        val label1 = if (top1 != null)
-            cleanLabel(categories.getOrElse(top1.index) { "Unknown" })
-        else "Unknown"
+        val label1 = if (top1 != null) cleanLabel(categories.getOrElse(top1.index) { "Unknown" }) else "Unknown"
         val conf1 = top1?.value ?: 0f
-        val label2 = if (top2Result != null)
-            cleanLabel(categories.getOrElse(top2Result.index) { "Unknown" })
-        else "Unknown"
+        val label2 = if (top2Result != null) cleanLabel(categories.getOrElse(top2Result.index) { "Unknown" }) else "Unknown"
         val conf2 = top2Result?.value ?: 0f
         return Pair(Pair(label1, conf1), Pair(label2, conf2))
     }
 
+    /**
+     * Berechnet Softmax für ein FloatArray.
+     */
     private fun softmax(scores: FloatArray): FloatArray {
         val max = scores.maxOrNull() ?: 0f
         val expScores = scores.map { exp((it - max).toDouble()).toFloat() }
@@ -305,14 +340,6 @@ class LoggingService : LifecycleService() {
     }
 
     // ---------------- Hilfsfunktionen zum Laden von Assets ----------------
-    private fun loadCategories(filename: String): List<String> {
-        val categoriesList = mutableListOf<String>()
-        assets.open(filename).bufferedReader().useLines { lines ->
-            lines.forEach { categoriesList.add(it) }
-        }
-        return categoriesList
-    }
-
     private fun assetFilePath(assetName: String): String {
         val file = File(applicationContext.filesDir, assetName)
         if (!file.exists() || file.length() == 0L) {
@@ -325,8 +352,16 @@ class LoggingService : LifecycleService() {
         return file.absolutePath
     }
 
-    // ---------------- YamNet und Vehicle Audio-Klassifikation (unverändert) ----------------
-    private fun startYamnetClassification() {
+    private fun loadCategories(filename: String): List<String> {
+        val categoriesList = mutableListOf<String>()
+        applicationContext.assets.open(filename).bufferedReader().useLines { lines ->
+            lines.forEach { categoriesList.add(it) }
+        }
+        return categoriesList
+    }
+
+    // ---------------- YamNet Audio-Klassifikation ----------------
+    private fun startYamNetClassification() {
         try {
             val modelPath = "lite-model_yamnet_classification_tflite_1.tflite"
             audioClassifier = org.tensorflow.lite.task.audio.classifier.AudioClassifier.createFromFile(this, modelPath)
@@ -361,7 +396,7 @@ class LoggingService : LifecycleService() {
         }
     }
 
-    private fun stopYamnet() {
+    private fun stopYamNet() {
         yamNetJob?.cancel()
         yamNetJob = null
         audioRecord?.stop()
@@ -371,6 +406,7 @@ class LoggingService : LifecycleService() {
         Log.d("LoggingService", "YamNet classification stopped.")
     }
 
+    // ---------------- Vehicle Audio-Klassifikation ----------------
     private fun startVehicleClassification() {
         try {
             val vehicleModelPath = "vehicle_sounds.tflite"
@@ -412,12 +448,12 @@ class LoggingService : LifecycleService() {
         Log.d("LoggingService", "Vehicle classification stopped.")
     }
 
-    // ---------------- Periodisches Logging (alle 5 Sekunden) ----------------
+    // ---------------- Periodisches Logging (alle 15 Sekunden) ----------------
     private fun startPeriodicLogging() {
         serviceScope.launch {
             val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
             while (isActive) {
-                delay(5000) // Loggen alle 5 Sekunden
+                delay(captureIntervalMillis)
                 val now = System.currentTimeMillis()
                 val timeStr = sdf.format(Date(now))
                 val placesTop1 = viewModel.currentPlacesTop1.value ?: "Unknown"
