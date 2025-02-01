@@ -10,6 +10,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Matrix
 import android.graphics.SurfaceTexture
 import android.net.Uri
 import android.os.Build
@@ -23,6 +24,7 @@ import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import androidx.exifinterface.media.ExifInterface
 import androidx.lifecycle.LifecycleService
 import com.google.android.gms.location.ActivityRecognition
 import com.google.android.gms.location.ActivityRecognitionClient
@@ -61,7 +63,7 @@ class LoggingService : LifecycleService() {
     private val cameraExecutor = Executors.newSingleThreadExecutor()
 
     // Aufnahmeintervall: 15 Sekunden
-    private val captureIntervalMillis = 15000L
+    private val captureIntervalMillis = 5000L
 
     // Places365 (AlexNet) Modell und Kategorien
     private var classificationModel: Module? = null
@@ -81,8 +83,7 @@ class LoggingService : LifecycleService() {
     private val allowedLabelIndices = setOf(
         106, 107, 110, 116, 122, 277, 278, 279, 283, 285, 288, 289, 295, 298, 300, 301, 302, 303, 304,
         305, 308, 310, 311, 312, 313, 314, 315, 316, 317, 318, 319, 320, 321, 323, 324, 325, 326, 327,
-        328, 329, 330, 331, 333, 334, 335, 338, 342, 343, 344, 345, 346, 347, 348, 349, 350, 351, 352,
-        354, 355, 357, 358, 359, 378, 380, 500, 501, 502, 503, 504, 508, 517, 519, 520
+        328, 329, 330, 331, 352, 354, 355, 357, 358, 359, 378, 380, 500, 501, 502, 503, 504, 508, 517, 519, 520
     )
 
     override fun onCreate() {
@@ -271,11 +272,27 @@ class LoggingService : LifecycleService() {
     }
 
     /**
-     * Dekodiert das JPEG aus der Datei in ein Bitmap, führt die Places365-Klassifikation (AlexNet) aus
-     * und speichert die Ergebnisse im ViewModel.
+     * Dekodiert das JPEG aus der Datei in ein Bitmap, korrigiert die Orientierung,
+     * führt die Places365-Klassifikation (AlexNet) aus und speichert die Ergebnisse im ViewModel.
      */
     private fun processCapturedImage(photoFile: File) {
-        val bitmap = BitmapFactory.decodeFile(photoFile.absolutePath)
+        var bitmap = BitmapFactory.decodeFile(photoFile.absolutePath)
+        if (bitmap != null) {
+            // Korrigiere die Bildorientierung anhand der EXIF-Daten
+            try {
+                val exif = ExifInterface(photoFile.absolutePath)
+                val orientation = exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+                bitmap = when (orientation) {
+                    ExifInterface.ORIENTATION_ROTATE_90 -> rotateBitmap(bitmap, 90f)
+                    ExifInterface.ORIENTATION_ROTATE_180 -> rotateBitmap(bitmap, 180f)
+                    ExifInterface.ORIENTATION_ROTATE_270 -> rotateBitmap(bitmap, 270f)
+                    else -> bitmap
+                }
+            } catch (e: Exception) {
+                Log.e("LoggingService", "Fehler beim Korrigieren der Bildorientierung: ${e.message}")
+            }
+        }
+
         if (bitmap != null && classificationModel != null && classificationCategories.isNotEmpty()) {
             Log.d("LoggingService", "Image processed. Bitmap size: ${bitmap.width} x ${bitmap.height}")
             serviceScope.launch(Dispatchers.Default) {
@@ -288,9 +305,18 @@ class LoggingService : LifecycleService() {
                 }
             }
         } else {
-            Log.e("LoggingService", "Failed to decode captured image or model/cats not loaded.")
+            Log.e("LoggingService", "Failed to decode captured image or model/categories not loaded.")
         }
         photoFile.delete()
+    }
+
+    /**
+     * Hilfsmethode zum Rotieren eines Bitmaps.
+     */
+    private fun rotateBitmap(bitmap: Bitmap, degrees: Float): Bitmap {
+        val matrix = Matrix()
+        matrix.postRotate(degrees)
+        return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
     }
 
     /**
