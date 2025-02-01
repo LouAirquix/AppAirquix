@@ -70,8 +70,8 @@ class LoggingService : LifecycleService() {
     private lateinit var imageCapture: ImageCapture
     private val cameraExecutor = Executors.newSingleThreadExecutor()
 
-    // Aufnahmeintervall: 15 Sekunden
-    private val captureIntervalMillis = 15000L
+    // Aufnahmeintervall: 5 Sekunden
+    private val captureIntervalMillis = 5000L
 
     // Places365 (AlexNet) Modell und Kategorien
     private var classificationModel: Module? = null
@@ -508,7 +508,6 @@ class LoggingService : LifecycleService() {
                 delay(captureIntervalMillis)
                 val now = System.currentTimeMillis()
                 val timeStr = sdf.format(Date(now))
-                // Hole alle Places365-Ergebnisse
                 val placesTop1 = viewModel.currentPlacesTop1.value ?: "Unknown"
                 val placesTop1Conf = viewModel.currentPlacesTop1Confidence.value
                 val placesTop2 = viewModel.currentPlacesTop2.value ?: "Unknown"
@@ -517,7 +516,6 @@ class LoggingService : LifecycleService() {
                 val placesTop3Conf = viewModel.currentPlacesTop3Confidence.value
                 val placesTop4 = viewModel.currentPlacesTop4.value ?: "Unknown"
                 val placesTop4Conf = viewModel.currentPlacesTop4Confidence.value
-
                 val act = viewModel.detectedActivity.value?.activityType ?: "Unknown"
                 val actConf = viewModel.detectedActivity.value?.confidence ?: 0
                 val yamTop3 = viewModel.currentYamnetTop3.value
@@ -540,4 +538,5 @@ class LoggingService : LifecycleService() {
             }
         }
     }
+
 }

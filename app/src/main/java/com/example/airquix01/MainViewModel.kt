@@ -21,7 +21,7 @@ class MainViewModel : ViewModel() {
     val currentPlacesTop1Confidence = mutableStateOf(0f)
     val currentPlacesTop2 = mutableStateOf("Unknown")
     val currentPlacesTop2Confidence = mutableStateOf(0f)
-    // Neue Felder für Top-3 und Top-4
+    // Neue Felder für Top3 und Top4
     val currentPlacesTop3 = mutableStateOf("Unknown")
     val currentPlacesTop3Confidence = mutableStateOf(0f)
     val currentPlacesTop4 = mutableStateOf("Unknown")
@@ -30,7 +30,7 @@ class MainViewModel : ViewModel() {
     // Aktivität
     val detectedActivity = mutableStateOf<DetectedActivityData?>(null)
 
-    // YamNet: Top-3
+    // YamNet: Top-3 (Liste von Label-Confidence-Paaren)
     val currentYamnetTop3 = mutableStateOf<List<LabelConfidence>>(emptyList())
 
     // Vehicle Top-1
@@ -51,6 +51,9 @@ class MainViewModel : ViewModel() {
     data class DetectedActivityData(val activityType: String, val confidence: Int)
     data class LabelConfidence(val label: String, val confidence: Float)
 
+    /**
+     * Falls ein String Kommata oder Anführungszeichen enthält, wird er für CSV-Zeilen maskiert.
+     */
     private fun csvEscape(str: String?): String {
         if (str == null) return ""
         return if (str.contains(",") || str.contains("\"")) {
@@ -60,15 +63,21 @@ class MainViewModel : ViewModel() {
         }
     }
 
-    // Angepasster CSV-Header:
-    // 0: timestamp
-    // 1: PLACES_top1, 2: places_top1_conf
-    // 3: PLACES_top2, 4: places_top2_conf
-    // 5: PLACES_top3, 6: places_top3_conf
-    // 7: PLACES_top4, 8: places_top4_conf
-    // 9: ACT, 10: ACT_confidence
-    // 11: YAMNET_top1, 12: top1_conf, 13: YAMNET_top2, 14: top2_conf, 15: YAMNET_top3, 16: top3_conf
-    // 17: VEHICLE_label, 18: vehicle_conf
+    /**
+     * Erzeugt und fügt eine Logzeile hinzu.
+     *
+     * CSV-Spalten (getrennt durch Kommas):
+     * 0: timestamp
+     * 1: PLACES_top1, 2: places_top1_conf
+     * 3: PLACES_top2, 4: places_top2_conf
+     * 5: PLACES_top3, 6: places_top3_conf
+     * 7: PLACES_top4, 8: places_top4_conf
+     * 9: ACT, 10: ACT_confidence
+     * 11: YAMNET_top1, 12: top1_conf
+     * 13: YAMNET_top2, 14: top2_conf
+     * 15: YAMNET_top3, 16: top3_conf
+     * 17: VEHICLE_label, 18: vehicle_conf
+     */
     fun appendLog(
         timeStr: String,
         placesTop1: String,
@@ -256,7 +265,7 @@ class MainViewModel : ViewModel() {
                 append("%.2f".format(Locale.US, placesBuffer.firstOrNull()?.first?.second ?: 0f)).append(",")
                 append(csvEscape(placesTop2)).append(",")
                 append("%.2f".format(Locale.US, placesBuffer.firstOrNull()?.second?.second ?: 0f))
-                // Weitere Felder für ACT und YamNet folgen hier...
+                // Weitere Aggregationsfelder können hier ergänzt werden
             }
             saveFeatureVectorLine(csvLine)
         }
