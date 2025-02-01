@@ -71,8 +71,8 @@ class LoggingService : LifecycleService() {
     private lateinit var imageCapture: ImageCapture
     private val cameraExecutor = Executors.newSingleThreadExecutor()
 
-    // Aufnahmeintervall: 15 Sekunden
-    private val captureIntervalMillis = 15000L
+    // Aufnahmeintervall: 5 Sekunden
+    private val captureIntervalMillis = 5000L
 
     // Places365 (AlexNet) Modell und Kategorien
     private var classificationModel: Module? = null
