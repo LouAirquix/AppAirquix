@@ -547,3 +547,5 @@ class LoggingService : LifecycleService() {
         }
     }
 }
+
+
