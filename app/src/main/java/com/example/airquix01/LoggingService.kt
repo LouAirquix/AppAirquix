@@ -48,12 +48,13 @@ import java.util.Locale
 import java.util.concurrent.Executors
 import kotlin.math.exp
 
-// Datenklasse für die Top-4 Ergebnisse von Places365
+// Datenklasse für die Top-5 Ergebnisse von Places365
 data class PlacesResults(
     val top1: Pair<String, Float>,
     val top2: Pair<String, Float>,
     val top3: Pair<String, Float>,
-    val top4: Pair<String, Float>
+    val top4: Pair<String, Float>,
+    val top5: Pair<String, Float>
 )
 
 class LoggingService : LifecycleService() {
@@ -115,7 +116,7 @@ class LoggingService : LifecycleService() {
         setupCamera() // Nach erfolgreicher Kamera-Bindung wird startPeriodicImageCapture() aufgerufen.
         startYamNetClassification()
         startVehicleClassification()
-        startPeriodicLogging()  // Logge alle 15 Sekunden
+        startPeriodicLogging()  // Logge alle 5 Sekunden
     }
 
     override fun onDestroy() {
@@ -226,8 +227,6 @@ class LoggingService : LifecycleService() {
             imageCapture = ImageCapture.Builder()
                 .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
                 .setTargetResolution(Size(1920, 1080))
-                // Optional: Setze die Zielrotation, falls benötigt
-                //.setTargetRotation(Surface.ROTATION_0)
                 .build()
 
             val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
@@ -249,11 +248,10 @@ class LoggingService : LifecycleService() {
         Log.d("LoggingService", "Camera stopped.")
     }
 
-    // ---------------- Periodische Bildaufnahme (alle 15 Sekunden) ----------------
+    // ---------------- Periodische Bildaufnahme (alle 5 Sekunden) ----------------
     private fun startPeriodicImageCapture() {
         serviceScope.launch {
             while (isActive) {
-                // Kurzes Delay, um der Kamera Zeit zum Stabilisieren (z.B. Autofokus) zu geben
                 delay(300)
                 captureImage()
                 delay(captureIntervalMillis)
@@ -265,7 +263,6 @@ class LoggingService : LifecycleService() {
      * Nimmt ein Bild mit ImageCapture auf, speichert es als JPEG in den Cache und verarbeitet es.
      */
     private fun captureImage() {
-        // Kurzer Sleep (auf dem Kamera-Thread) für zusätzliche Stabilisierung
         Thread.sleep(300)
         val photoFile = File(cacheDir, "photo_${System.currentTimeMillis()}.jpg")
         val outputOptions = ImageCapture.OutputFileOptions.Builder(photoFile).build()
@@ -294,7 +291,6 @@ class LoggingService : LifecycleService() {
     private fun processCapturedImage(photoFile: File) {
         var bitmap = BitmapFactory.decodeFile(photoFile.absolutePath)
         if (bitmap != null) {
-            // Bildorientierung anhand der EXIF-Daten korrigieren
             try {
                 val exif = ExifInterface(photoFile.absolutePath)
                 val orientation = exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
@@ -312,7 +308,6 @@ class LoggingService : LifecycleService() {
         if (bitmap != null && classificationModel != null && classificationCategories.isNotEmpty()) {
             Log.d("LoggingService", "Image processed. Bitmap size: ${bitmap.width} x ${bitmap.height}")
             serviceScope.launch(Dispatchers.Default) {
-                // Erhalte die Top 4 Ergebnisse von Places365
                 val results = classifyImageAlexNet(bitmap, classificationModel!!, classificationCategories)
                 withContext(Dispatchers.Main) {
                     viewModel.currentPlacesTop1.value = results.top1.first
@@ -323,6 +318,8 @@ class LoggingService : LifecycleService() {
                     viewModel.currentPlacesTop3Confidence.value = results.top3.second
                     viewModel.currentPlacesTop4.value = results.top4.first
                     viewModel.currentPlacesTop4Confidence.value = results.top4.second
+                    viewModel.currentPlacesTop5.value = results.top5.first
+                    viewModel.currentPlacesTop5Confidence.value = results.top5.second
                 }
             }
         } else {
@@ -342,7 +339,7 @@ class LoggingService : LifecycleService() {
 
     /**
      * Führt die AlexNet-Klassifikation für Places365 durch.
-     * Skaliert das Bitmap auf 224x224, erstellt einen Tensor, führt Inferenz durch und ermittelt die Top 4.
+     * Skaliert das Bitmap auf 224x224, erstellt einen Tensor, führt Inferenz durch und ermittelt die Top 5.
      */
     private fun classifyImageAlexNet(
         bitmap: Bitmap,
@@ -358,12 +355,13 @@ class LoggingService : LifecycleService() {
         val outputTensor = model.forward(IValue.from(inputTensor)).toTensor()
         val outputArray = outputTensor.dataAsFloatArray
         val probabilities = softmax(outputArray)
-        val top4List = probabilities.withIndex().sortedByDescending { it.value }.take(4)
+        val top5List = probabilities.withIndex().sortedByDescending { it.value }.take(5)
 
-        val top1 = top4List.getOrNull(0)
-        val top2 = top4List.getOrNull(1)
-        val top3 = top4List.getOrNull(2)
-        val top4 = top4List.getOrNull(3)
+        val top1 = top5List.getOrNull(0)
+        val top2 = top5List.getOrNull(1)
+        val top3 = top5List.getOrNull(2)
+        val top4 = top5List.getOrNull(3)
+        val top5 = top5List.getOrNull(4)
 
         fun cleanLabel(raw: String): String {
             return raw.replace(Regex("^/\\w/"), "")
@@ -380,12 +378,15 @@ class LoggingService : LifecycleService() {
         val conf3 = top3?.value ?: 0f
         val label4 = if (top4 != null) cleanLabel(categories.getOrElse(top4.index) { "Unknown" }) else "Unknown"
         val conf4 = top4?.value ?: 0f
+        val label5 = if (top5 != null) cleanLabel(categories.getOrElse(top5.index) { "Unknown" }) else "Unknown"
+        val conf5 = top5?.value ?: 0f
 
         return PlacesResults(
             top1 = Pair(label1, conf1),
             top2 = Pair(label2, conf2),
             top3 = Pair(label3, conf3),
-            top4 = Pair(label4, conf4)
+            top4 = Pair(label4, conf4),
+            top5 = Pair(label5, conf5)
         )
     }
 
@@ -508,7 +509,7 @@ class LoggingService : LifecycleService() {
         Log.d("LoggingService", "Vehicle classification stopped.")
     }
 
-    // ---------------- Periodisches Logging (alle 15 Sekunden) ----------------
+    // ---------------- Periodisches Logging (alle 5 Sekunden) ----------------
     private fun startPeriodicLogging() {
         serviceScope.launch {
             val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
@@ -524,6 +525,8 @@ class LoggingService : LifecycleService() {
                 val placesTop3Conf = viewModel.currentPlacesTop3Confidence.value
                 val placesTop4 = viewModel.currentPlacesTop4.value ?: "Unknown"
                 val placesTop4Conf = viewModel.currentPlacesTop4Confidence.value
+                val placesTop5 = viewModel.currentPlacesTop5.value ?: "Unknown"
+                val placesTop5Conf = viewModel.currentPlacesTop5Confidence.value
                 val act = viewModel.detectedActivity.value?.activityType ?: "Unknown"
                 val actConf = viewModel.detectedActivity.value?.confidence ?: 0
                 val yamTop3 = viewModel.currentYamnetTop3.value
@@ -538,6 +541,8 @@ class LoggingService : LifecycleService() {
                     placesTop3Conf = placesTop3Conf,
                     placesTop4 = placesTop4,
                     placesTop4Conf = placesTop4Conf,
+                    placesTop5 = placesTop5,
+                    placesTop5Conf = placesTop5Conf,
                     act = act,
                     actConf = actConf,
                     yamTop3 = yamTop3,
@@ -547,5 +552,3 @@ class LoggingService : LifecycleService() {
         }
     }
 }
-
-

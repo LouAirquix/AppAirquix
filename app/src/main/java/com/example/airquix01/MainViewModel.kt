@@ -21,11 +21,13 @@ class MainViewModel : ViewModel() {
     val currentPlacesTop1Confidence = mutableStateOf(0f)
     val currentPlacesTop2 = mutableStateOf("Unknown")
     val currentPlacesTop2Confidence = mutableStateOf(0f)
-    // Neue Felder für Top3 und Top4
     val currentPlacesTop3 = mutableStateOf("Unknown")
     val currentPlacesTop3Confidence = mutableStateOf(0f)
     val currentPlacesTop4 = mutableStateOf("Unknown")
     val currentPlacesTop4Confidence = mutableStateOf(0f)
+    // Neue Felder für Top5
+    val currentPlacesTop5 = mutableStateOf("Unknown")
+    val currentPlacesTop5Confidence = mutableStateOf(0f)
 
     // Aktivität
     val detectedActivity = mutableStateOf<DetectedActivityData?>(null)
@@ -72,11 +74,12 @@ class MainViewModel : ViewModel() {
      * 3: PLACES_top2, 4: places_top2_conf
      * 5: PLACES_top3, 6: places_top3_conf
      * 7: PLACES_top4, 8: places_top4_conf
-     * 9: ACT, 10: ACT_confidence
-     * 11: YAMNET_top1, 12: top1_conf
-     * 13: YAMNET_top2, 14: top2_conf
-     * 15: YAMNET_top3, 16: top3_conf
-     * 17: VEHICLE_label, 18: vehicle_conf
+     * 9: PLACES_top5, 10: places_top5_conf
+     * 11: ACT, 12: ACT_confidence
+     * 13: YAMNET_top1, 14: top1_conf
+     * 15: YAMNET_top2, 16: top2_conf
+     * 17: YAMNET_top3, 18: top3_conf
+     * 19: VEHICLE_label, 20: vehicle_conf
      */
     fun appendLog(
         timeStr: String,
@@ -88,6 +91,8 @@ class MainViewModel : ViewModel() {
         placesTop3Conf: Float,
         placesTop4: String,
         placesTop4Conf: Float,
+        placesTop5: String,
+        placesTop5Conf: Float,
         act: String,
         actConf: Int,
         yamTop3: List<LabelConfidence>,
@@ -103,6 +108,8 @@ class MainViewModel : ViewModel() {
             append("%.2f".format(Locale.US, placesTop3Conf)).append(",")
             append(csvEscape(placesTop4)).append(",")
             append("%.2f".format(Locale.US, placesTop4Conf)).append(",")
+            append(csvEscape(placesTop5)).append(",")
+            append("%.2f".format(Locale.US, placesTop5Conf)).append(",")
             append(csvEscape(act)).append(",")
             append(actConf).append(",")
             val top1 = yamTop3.getOrNull(0)
@@ -149,7 +156,7 @@ class MainViewModel : ViewModel() {
             logsCsvFile = File(dir, logsCsvFileName)
             if (!logsCsvFile!!.exists()) {
                 logsCsvFile!!.writeText(
-                    "timestamp,PLACES_top1,places_top1_conf,PLACES_top2,places_top2_conf,PLACES_top3,places_top3_conf,PLACES_top4,places_top4_conf,ACT,ACT_confidence," +
+                    "timestamp,PLACES_top1,places_top1_conf,PLACES_top2,places_top2_conf,PLACES_top3,places_top3_conf,PLACES_top4,places_top4_conf,PLACES_top5,places_top5_conf,ACT,ACT_confidence," +
                             "YAMNET_top1,top1_conf,YAMNET_top2,top2_conf,YAMNET_top3,top3_conf,VEHICLE_label,vehicle_conf\n"
                 )
             }
@@ -164,7 +171,7 @@ class MainViewModel : ViewModel() {
             if (!featureCsvFile!!.exists()) {
                 featureCsvFile!!.writeText(
                     "timestamp," +
-                            "PLACES_top1,places_top1_conf,PLACES_top2,places_top2_conf,PLACES_top3,places_top3_conf,PLACES_top4,places_top4_conf," +
+                            "PLACES_top1,places_top1_conf,PLACES_top2,places_top2_conf,PLACES_top3,places_top3_conf,PLACES_top4,places_top4_conf,PLACES_top5,places_top5_conf," +
                             "ACT,act_conf_avg," +
                             "YAMNET_top1,top1_conf,YAMNET_top2,top2_conf,YAMNET_top3,top3_conf," +
                             "YAMNET_top1_global_label,top1_global_conf," +
@@ -196,7 +203,7 @@ class MainViewModel : ViewModel() {
             logsFile.delete()
         }
         logsFile.writeText(
-            "timestamp,PLACES_top1,places_top1_conf,PLACES_top2,places_top2_conf,PLACES_top3,places_top3_conf,PLACES_top4,places_top4_conf,ACT,ACT_confidence," +
+            "timestamp,PLACES_top1,places_top1_conf,PLACES_top2,places_top2_conf,PLACES_top3,places_top3_conf,PLACES_top4,places_top4_conf,PLACES_top5,places_top5_conf,ACT,ACT_confidence," +
                     "YAMNET_top1,top1_conf,YAMNET_top2,top2_conf,YAMNET_top3,top3_conf,VEHICLE_label,vehicle_conf\n"
         )
         val featureFile = getFeatureCsvFile()
@@ -205,7 +212,7 @@ class MainViewModel : ViewModel() {
         }
         featureFile.writeText(
             "timestamp," +
-                    "PLACES_top1,places_top1_conf,PLACES_top2,places_top2_conf,PLACES_top3,places_top3_conf,PLACES_top4,places_top4_conf," +
+                    "PLACES_top1,places_top1_conf,PLACES_top2,places_top2_conf,PLACES_top3,places_top3_conf,PLACES_top4,places_top4_conf,PLACES_top5,places_top5_conf," +
                     "ACT,act_conf_avg," +
                     "YAMNET_top1,top1_conf,YAMNET_top2,top2_conf,YAMNET_top3,top3_conf," +
                     "YAMNET_top1_global_label,top1_global_conf," +

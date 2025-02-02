@@ -52,7 +52,6 @@ class MainActivity : ComponentActivity() {
                 val app = context.applicationContext as AirquixApplication
                 val viewModel = app.getMainViewModel()
 
-                // State für Read-Me-Dialog
                 var showReadMe by remember { mutableStateOf(false) }
 
                 Scaffold(
@@ -91,9 +90,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // ---------------------------
-    // UI
-    // ---------------------------
     @Composable
     fun MainScreen(
         modifier: Modifier = Modifier,
@@ -109,7 +105,6 @@ class MainActivity : ComponentActivity() {
                 .fillMaxSize()
                 .padding(16.dp)
         ) {
-            // Erste Reihe: Start & Stop
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(16.dp)
@@ -132,7 +127,6 @@ class MainActivity : ComponentActivity() {
 
             Spacer(Modifier.height(16.dp))
 
-            // Zweite Reihe: Clear, Share CSV Logs, Share Feature
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -174,9 +168,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /**
-     * Einfacher CSV-Parser, der Anführungszeichen und Kommas korrekt behandelt.
-     */
     private fun parseCsvLine(line: String): List<String> {
         val result = mutableListOf<String>()
         var current = StringBuilder()
@@ -209,17 +200,18 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     fun LogItem(logLine: String) {
-        // Angepasst: Wir erwarten jetzt 19 Felder:
+        // Wir erwarten jetzt 21 Felder:
         // 0: timestamp
         // 1: PLACES_top1, 2: places_top1_conf
         // 3: PLACES_top2, 4: places_top2_conf
         // 5: PLACES_top3, 6: places_top3_conf
         // 7: PLACES_top4, 8: places_top4_conf
-        // 9: ACT, 10: ACT_confidence
-        // 11: YAMNET_top1, 12: top1_conf
-        // 13: YAMNET_top2, 14: top2_conf
-        // 15: YAMNET_top3, 16: top3_conf
-        // 17: VEHICLE_label, 18: vehicle_conf
+        // 9: PLACES_top5, 10: places_top5_conf
+        // 11: ACT, 12: ACT_confidence
+        // 13: YAMNET_top1, 14: top1_conf
+        // 15: YAMNET_top2, 16: top2_conf
+        // 17: YAMNET_top3, 18: top3_conf
+        // 19: VEHICLE_label, 20: vehicle_conf
         val parts = remember(logLine) { parseCsvLine(logLine) }
         val timestamp = parts.getOrNull(0) ?: ""
         val placesTop1 = parts.getOrNull(1) ?: ""
@@ -230,16 +222,18 @@ class MainActivity : ComponentActivity() {
         val placesTop3Conf = parts.getOrNull(6) ?: ""
         val placesTop4 = parts.getOrNull(7) ?: ""
         val placesTop4Conf = parts.getOrNull(8) ?: ""
-        val act = parts.getOrNull(9) ?: ""
-        val actConf = parts.getOrNull(10) ?: ""
-        val yamTop1 = parts.getOrNull(11) ?: ""
-        val yamTop1Conf = parts.getOrNull(12) ?: ""
-        val yamTop2 = parts.getOrNull(13) ?: ""
-        val yamTop2Conf = parts.getOrNull(14) ?: ""
-        val yamTop3 = parts.getOrNull(15) ?: ""
-        val yamTop3Conf = parts.getOrNull(16) ?: ""
-        val vehLabel = parts.getOrNull(17) ?: ""
-        val vehConf = parts.getOrNull(18) ?: ""
+        val placesTop5 = parts.getOrNull(9) ?: ""
+        val placesTop5Conf = parts.getOrNull(10) ?: ""
+        val act = parts.getOrNull(11) ?: ""
+        val actConf = parts.getOrNull(12) ?: ""
+        val yamTop1 = parts.getOrNull(13) ?: ""
+        val yamTop1Conf = parts.getOrNull(14) ?: ""
+        val yamTop2 = parts.getOrNull(15) ?: ""
+        val yamTop2Conf = parts.getOrNull(16) ?: ""
+        val yamTop3 = parts.getOrNull(17) ?: ""
+        val yamTop3Conf = parts.getOrNull(18) ?: ""
+        val vehLabel = parts.getOrNull(19) ?: ""
+        val vehConf = parts.getOrNull(20) ?: ""
 
         Card(
             modifier = Modifier
@@ -255,6 +249,7 @@ class MainActivity : ComponentActivity() {
                 Text("Places Top-2: $placesTop2 (conf: $placesTop2Conf)")
                 Text("Places Top-3: $placesTop3 (conf: $placesTop3Conf)")
                 Text("Places Top-4: $placesTop4 (conf: $placesTop4Conf)")
+                Text("Places Top-5: $placesTop5 (conf: $placesTop5Conf)")
                 Text("Activity: $act (conf: $actConf)")
                 Text("YAMNET Top-1: $yamTop1 (conf: $yamTop1Conf)")
                 Text("YAMNET Top-2: $yamTop2 (conf: $yamTop2Conf)")
@@ -267,7 +262,6 @@ class MainActivity : ComponentActivity() {
     @Composable
     fun ReadMeDialog(onDismiss: () -> Unit, context: Context) {
         val readMeContent = remember { loadReadMeFromAssets(context) }
-
         AlertDialog(
             onDismissRequest = onDismiss,
             title = { Text(text = "Read Me", fontWeight = FontWeight.Bold) },
@@ -304,9 +298,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // ---------------------------
-    // Berechtigungen
-    // ---------------------------
     private fun checkAndRequestPermissions() {
         val needed = mutableListOf<String>()
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
