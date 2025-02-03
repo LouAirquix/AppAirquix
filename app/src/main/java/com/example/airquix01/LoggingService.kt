@@ -42,6 +42,7 @@ import org.pytorch.IValue
 import org.pytorch.Module
 import org.pytorch.torchvision.TensorImageUtils
 import java.io.File
+import java.io.FileWriter
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -79,6 +80,9 @@ class LoggingService : LifecycleService() {
     private var classificationModel: Module? = null
     private var classificationCategories: List<String> = emptyList()
 
+    // IO-Mapping: Liste, die zu jedem Klassenindex (0 bis 364) angibt, ob indoor (1) oder outdoor (2)
+    private var ioMapping: List<Int> = emptyList()
+
     // YamNet Audio-Klassifikation
     private var audioClassifier: org.tensorflow.lite.task.audio.classifier.AudioClassifier? = null
     private var audioRecord: android.media.AudioRecord? = null
@@ -101,6 +105,9 @@ class LoggingService : LifecycleService() {
         val app = applicationContext as AirquixApplication
         viewModel = app.getMainViewModel()
         viewModel.isLogging.value = true
+
+        // Lade das IO-Mapping aus der Datei IO_places365.txt (enthält für jede Kategorie den Wert 1 oder 2)
+        ioMapping = loadIOFile("IO_places365.txt")
 
         // Modell und Kategorien für Places365 laden
         try {
@@ -308,7 +315,10 @@ class LoggingService : LifecycleService() {
         if (bitmap != null && classificationModel != null && classificationCategories.isNotEmpty()) {
             Log.d("LoggingService", "Image processed. Bitmap size: ${bitmap.width} x ${bitmap.height}")
             serviceScope.launch(Dispatchers.Default) {
+                // Erhalte die Top 5 Ergebnisse von Places365
                 val results = classifyImageAlexNet(bitmap, classificationModel!!, classificationCategories)
+                // Bestimme den Scene-Typ (indoor/outdoor) mithilfe des IO-Mappings
+                val sceneType = determineSceneType(results)
                 withContext(Dispatchers.Main) {
                     viewModel.currentPlacesTop1.value = results.top1.first
                     viewModel.currentPlacesTop1Confidence.value = results.top1.second
@@ -320,6 +330,7 @@ class LoggingService : LifecycleService() {
                     viewModel.currentPlacesTop4Confidence.value = results.top4.second
                     viewModel.currentPlacesTop5.value = results.top5.first
                     viewModel.currentPlacesTop5Confidence.value = results.top5.second
+                    viewModel.currentSceneType.value = sceneType
                 }
             }
         } else {
@@ -419,6 +430,59 @@ class LoggingService : LifecycleService() {
             lines.forEach { categoriesList.add(it) }
         }
         return categoriesList
+    }
+
+    /**
+     * Liest die Datei IO_places365.txt aus den Assets und gibt eine Liste von Integer-Werten zurück,
+     * die für jede Kategorie (entsprechend der Reihenfolge in categories_places365.txt) den Indoor/Outdoor-Typ angibt.
+     * 1 = indoor, 2 = outdoor.
+     */
+    private fun loadIOFile(filename: String): List<Int> {
+        val result = mutableListOf<Int>()
+        applicationContext.assets.open(filename).bufferedReader().useLines { lines ->
+            lines.forEach { line ->
+                val parts = line.split(" ")
+                if (parts.size >= 2) {
+                    val ioVal = parts[1].toIntOrNull()
+                    if (ioVal != null) {
+                        result.add(ioVal)
+                    }
+                }
+            }
+        }
+        return result
+    }
+
+    /**
+     * Bestimmt den Indoor/Outdoor-Typ anhand des Top-1-Ergebnisses und des IO-Mappings.
+     *
+     * Hier wird angenommen, dass das Top-1-Label (results.top1.first) in der gleichen
+     * Reihenfolge wie in categories_places365.txt steht. Wir suchen den Index des Labels in der Liste.
+     * Falls das Mapping vorhanden ist, geben wir "indoor" zurück, wenn der entsprechende Wert 1 ist,
+     * oder "outdoor" bei 2. Andernfalls "unknown".
+     */
+    private fun determineSceneType(results: PlacesResults): String {
+        // Prüfe, ob das Mapping geladen wurde
+        if (ioMapping.isNotEmpty() && classificationCategories.isNotEmpty()) {
+            // Finde den Index, an dem das Top-1-Label in der Liste der Kategorien steht
+            val top1Label = results.top1.first
+            // Da in den Kategorien eventuell Pfad-Präfixe vorhanden sind (z. B. "/a/"),
+            // verwenden wir eine Hilfsmethode zur Bereinigung:
+            val cleanedTop1 = cleanLabel(top1Label)
+            val index = classificationCategories.indexOfFirst { cleanLabel(it) == cleanedTop1 }
+            if (index in ioMapping.indices) {
+                return if (ioMapping[index] == 1) "indoor" else "outdoor"
+            }
+        }
+        return "unknown"
+    }
+
+    // Hilfsmethode zur Bereinigung von Labels (wie in classifyImageAlexNet verwendet)
+    private fun cleanLabel(raw: String): String {
+        return raw.replace(Regex("^/\\w/"), "")
+            .replace(Regex("\\s+\\d+\$"), "")
+            .replace('_', ' ')
+            .trim()
     }
 
     // ---------------- YamNet Audio-Klassifikation ----------------
@@ -527,6 +591,7 @@ class LoggingService : LifecycleService() {
                 val placesTop4Conf = viewModel.currentPlacesTop4Confidence.value
                 val placesTop5 = viewModel.currentPlacesTop5.value ?: "Unknown"
                 val placesTop5Conf = viewModel.currentPlacesTop5Confidence.value
+                val sceneType = viewModel.currentSceneType.value ?: "Unknown"
                 val act = viewModel.detectedActivity.value?.activityType ?: "Unknown"
                 val actConf = viewModel.detectedActivity.value?.confidence ?: 0
                 val yamTop3 = viewModel.currentYamnetTop3.value
@@ -543,6 +608,7 @@ class LoggingService : LifecycleService() {
                     placesTop4Conf = placesTop4Conf,
                     placesTop5 = placesTop5,
                     placesTop5Conf = placesTop5Conf,
+                    sceneType = sceneType,   // Indoor/Outdoor-Typ wird hier geloggt
                     act = act,
                     actConf = actConf,
                     yamTop3 = yamTop3,

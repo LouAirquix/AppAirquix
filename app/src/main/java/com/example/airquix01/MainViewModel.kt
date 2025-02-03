@@ -25,9 +25,11 @@ class MainViewModel : ViewModel() {
     val currentPlacesTop3Confidence = mutableStateOf(0f)
     val currentPlacesTop4 = mutableStateOf("Unknown")
     val currentPlacesTop4Confidence = mutableStateOf(0f)
-    // Neue Felder für Top5
     val currentPlacesTop5 = mutableStateOf("Unknown")
     val currentPlacesTop5Confidence = mutableStateOf(0f)
+
+    // Neuer State für den Indoor/Outdoor-Typ
+    val currentSceneType = mutableStateOf("Unknown")
 
     // Aktivität
     val detectedActivity = mutableStateOf<DetectedActivityData?>(null)
@@ -75,11 +77,12 @@ class MainViewModel : ViewModel() {
      * 5: PLACES_top3, 6: places_top3_conf
      * 7: PLACES_top4, 8: places_top4_conf
      * 9: PLACES_top5, 10: places_top5_conf
-     * 11: ACT, 12: ACT_confidence
-     * 13: YAMNET_top1, 14: top1_conf
-     * 15: YAMNET_top2, 16: top2_conf
-     * 17: YAMNET_top3, 18: top3_conf
-     * 19: VEHICLE_label, 20: vehicle_conf
+     * 11: SCENE_TYPE
+     * 12: ACT, 13: ACT_confidence
+     * 14: YAMNET_top1, 15: top1_conf
+     * 16: YAMNET_top2, 17: top2_conf
+     * 18: YAMNET_top3, 19: top3_conf
+     * 20: VEHICLE_label, 21: vehicle_conf
      */
     fun appendLog(
         timeStr: String,
@@ -93,6 +96,7 @@ class MainViewModel : ViewModel() {
         placesTop4Conf: Float,
         placesTop5: String,
         placesTop5Conf: Float,
+        sceneType: String,
         act: String,
         actConf: Int,
         yamTop3: List<LabelConfidence>,
@@ -110,6 +114,7 @@ class MainViewModel : ViewModel() {
             append("%.2f".format(Locale.US, placesTop4Conf)).append(",")
             append(csvEscape(placesTop5)).append(",")
             append("%.2f".format(Locale.US, placesTop5Conf)).append(",")
+            append(csvEscape(sceneType)).append(",")
             append(csvEscape(act)).append(",")
             append(actConf).append(",")
             val top1 = yamTop3.getOrNull(0)
@@ -156,7 +161,7 @@ class MainViewModel : ViewModel() {
             logsCsvFile = File(dir, logsCsvFileName)
             if (!logsCsvFile!!.exists()) {
                 logsCsvFile!!.writeText(
-                    "timestamp,PLACES_top1,places_top1_conf,PLACES_top2,places_top2_conf,PLACES_top3,places_top3_conf,PLACES_top4,places_top4_conf,PLACES_top5,places_top5_conf,ACT,ACT_confidence," +
+                    "timestamp,PLACES_top1,places_top1_conf,PLACES_top2,places_top2_conf,PLACES_top3,places_top3_conf,PLACES_top4,places_top4_conf,PLACES_top5,places_top5_conf,SCENE_TYPE,ACT,ACT_confidence," +
                             "YAMNET_top1,top1_conf,YAMNET_top2,top2_conf,YAMNET_top3,top3_conf,VEHICLE_label,vehicle_conf\n"
                 )
             }
@@ -172,7 +177,7 @@ class MainViewModel : ViewModel() {
                 featureCsvFile!!.writeText(
                     "timestamp," +
                             "PLACES_top1,places_top1_conf,PLACES_top2,places_top2_conf,PLACES_top3,places_top3_conf,PLACES_top4,places_top4_conf,PLACES_top5,places_top5_conf," +
-                            "ACT,act_conf_avg," +
+                            "SCENE_TYPE,ACT,act_conf_avg," +
                             "YAMNET_top1,top1_conf,YAMNET_top2,top2_conf,YAMNET_top3,top3_conf," +
                             "YAMNET_top1_global_label,top1_global_conf," +
                             "YAMNET_top2_global_label,top2_global_conf," +
@@ -203,7 +208,7 @@ class MainViewModel : ViewModel() {
             logsFile.delete()
         }
         logsFile.writeText(
-            "timestamp,PLACES_top1,places_top1_conf,PLACES_top2,places_top2_conf,PLACES_top3,places_top3_conf,PLACES_top4,places_top4_conf,PLACES_top5,places_top5_conf,ACT,ACT_confidence," +
+            "timestamp,PLACES_top1,places_top1_conf,PLACES_top2,places_top2_conf,PLACES_top3,places_top3_conf,PLACES_top4,places_top4_conf,PLACES_top5,places_top5_conf,SCENE_TYPE,ACT,ACT_confidence," +
                     "YAMNET_top1,top1_conf,YAMNET_top2,top2_conf,YAMNET_top3,top3_conf,VEHICLE_label,vehicle_conf\n"
         )
         val featureFile = getFeatureCsvFile()
@@ -213,7 +218,7 @@ class MainViewModel : ViewModel() {
         featureFile.writeText(
             "timestamp," +
                     "PLACES_top1,places_top1_conf,PLACES_top2,places_top2_conf,PLACES_top3,places_top3_conf,PLACES_top4,places_top4_conf,PLACES_top5,places_top5_conf," +
-                    "ACT,act_conf_avg," +
+                    "SCENE_TYPE,ACT,act_conf_avg," +
                     "YAMNET_top1,top1_conf,YAMNET_top2,top2_conf,YAMNET_top3,top3_conf," +
                     "YAMNET_top1_global_label,top1_global_conf," +
                     "YAMNET_top2_global_label,top2_global_conf," +
