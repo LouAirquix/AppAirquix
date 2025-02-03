@@ -100,16 +100,19 @@ class LoggingService : LifecycleService() {
         328, 329, 330, 331, 352, 354, 355, 357, 358, 359, 378, 380, 500, 501, 502, 503, 504, 508, 517, 519, 520
     )
 
+    // Definiere die auszuschließenden Labels (bereinigt)
+    private val excludedLabels = setOf("medina", "catacomb")
+
     override fun onCreate() {
         super.onCreate()
         val app = applicationContext as AirquixApplication
         viewModel = app.getMainViewModel()
         viewModel.isLogging.value = true
 
-        // Lade das IO-Mapping aus der Datei IO_places365.txt (enthält für jede Kategorie den Wert 1 oder 2)
+        // Lade das IO-Mapping aus der Datei IO_places365.txt
         ioMapping = loadIOFile("IO_places365.txt")
 
-        // Modell und Kategorien für Places365 laden
+        // Lade Modell und Kategorien
         try {
             classificationModel = Module.load(assetFilePath("alexnet_places365_quantized.pt"))
             classificationCategories = loadCategories("categories_places365.txt")
@@ -120,7 +123,7 @@ class LoggingService : LifecycleService() {
 
         startForegroundServiceNotification()
         startActivityRecognition()
-        setupCamera() // Nach erfolgreicher Kamera-Bindung wird startPeriodicImageCapture() aufgerufen.
+        setupCamera() // Startet nach erfolgreicher Kamera-Bindung die periodische Bildaufnahme
         startYamNetClassification()
         startVehicleClassification()
         startPeriodicLogging()  // Logge alle 5 Sekunden
@@ -218,7 +221,7 @@ class LoggingService : LifecycleService() {
         cameraProviderFuture.addListener({
             cameraProvider = cameraProviderFuture.get()
 
-            // Dummy-Preview (wird benötigt, auch wenn wir nur Bilder aufnehmen)
+            // Dummy-Preview (wird benötigt, auch wenn nur Bilder aufgenommen werden)
             val preview = Preview.Builder().build()
             preview.setSurfaceProvider { request ->
                 val texture = SurfaceTexture(0)
@@ -230,7 +233,7 @@ class LoggingService : LifecycleService() {
                 }
             }
 
-            // Optimierter ImageCapture-Use Case: Maximale Qualität, Zielauflösung und (optional) Rotation
+            // ImageCapture-Use Case: Maximale Qualität und Zielauflösung
             imageCapture = ImageCapture.Builder()
                 .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
                 .setTargetResolution(Size(1920, 1080))
@@ -241,7 +244,6 @@ class LoggingService : LifecycleService() {
                 cameraProvider?.unbindAll()
                 cameraProvider?.bindToLifecycle(this, cameraSelector, preview, imageCapture)
                 Log.d("LoggingService", "Camera set up with high quality ImageCapture.")
-                // Starte den periodischen Bildaufnahme-Job, nachdem imageCapture initialisiert ist
                 startPeriodicImageCapture()
             } catch (exc: Exception) {
                 Log.e("LoggingService", "Error setting up camera: ${exc.message}")
@@ -315,7 +317,7 @@ class LoggingService : LifecycleService() {
         if (bitmap != null && classificationModel != null && classificationCategories.isNotEmpty()) {
             Log.d("LoggingService", "Image processed. Bitmap size: ${bitmap.width} x ${bitmap.height}")
             serviceScope.launch(Dispatchers.Default) {
-                // Erhalte die Top 5 Ergebnisse von Places365
+                // Erhalte die Top 5 Ergebnisse von Places365, dabei werden "medina" und "catacomb" ausgeschlossen
                 val results = classifyImageAlexNet(bitmap, classificationModel!!, classificationCategories)
                 // Bestimme den Scene-Typ (indoor/outdoor) mithilfe des IO-Mappings
                 val sceneType = determineSceneType(results)
@@ -351,6 +353,7 @@ class LoggingService : LifecycleService() {
     /**
      * Führt die AlexNet-Klassifikation für Places365 durch.
      * Skaliert das Bitmap auf 224x224, erstellt einen Tensor, führt Inferenz durch und ermittelt die Top 5.
+     * Dabei werden Labels, die in excludedLabels enthalten sind, herausgefiltert.
      */
     private fun classifyImageAlexNet(
         bitmap: Bitmap,
@@ -366,7 +369,18 @@ class LoggingService : LifecycleService() {
         val outputTensor = model.forward(IValue.from(inputTensor)).toTensor()
         val outputArray = outputTensor.dataAsFloatArray
         val probabilities = softmax(outputArray)
-        val top5List = probabilities.withIndex().sortedByDescending { it.value }.take(5)
+
+        // Erzeuge Indexed-Objekte, filtere aber zuerst die ausgeschlossenen Labels heraus.
+        val allIndexed = probabilities.withIndex()
+        val filteredIndexed = allIndexed.filter { indexed ->
+            // Hole das zugehörige Rohlabel (z. B. "/a/catacomb")
+            val rawLabel = categories.getOrElse(indexed.index) { "Unknown" }
+            val cleaned = cleanLabel(rawLabel)
+            // Ausschließen, wenn das Label in der Liste der auszuschließenden Labels steht
+            cleaned !in excludedLabels
+        }
+
+        val top5List = filteredIndexed.sortedByDescending { it.value }.take(5)
 
         val top1 = top5List.getOrNull(0)
         val top2 = top5List.getOrNull(1)
@@ -462,12 +476,8 @@ class LoggingService : LifecycleService() {
      * oder "outdoor" bei 2. Andernfalls "unknown".
      */
     private fun determineSceneType(results: PlacesResults): String {
-        // Prüfe, ob das Mapping geladen wurde
         if (ioMapping.isNotEmpty() && classificationCategories.isNotEmpty()) {
-            // Finde den Index, an dem das Top-1-Label in der Liste der Kategorien steht
             val top1Label = results.top1.first
-            // Da in den Kategorien eventuell Pfad-Präfixe vorhanden sind (z. B. "/a/"),
-            // verwenden wir eine Hilfsmethode zur Bereinigung:
             val cleanedTop1 = cleanLabel(top1Label)
             val index = classificationCategories.indexOfFirst { cleanLabel(it) == cleanedTop1 }
             if (index in ioMapping.indices) {
@@ -608,7 +618,7 @@ class LoggingService : LifecycleService() {
                     placesTop4Conf = placesTop4Conf,
                     placesTop5 = placesTop5,
                     placesTop5Conf = placesTop5Conf,
-                    sceneType = sceneType,   // Indoor/Outdoor-Typ wird hier geloggt
+                    sceneType = sceneType,
                     act = act,
                     actConf = actConf,
                     yamTop3 = yamTop3,
