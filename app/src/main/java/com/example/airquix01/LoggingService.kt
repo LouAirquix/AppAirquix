@@ -101,7 +101,7 @@ class LoggingService : LifecycleService() {
     )
 
     // Definiere die auszuschließenden Labels (bereinigt)
-    private val excludedLabels = setOf("medina", "kasbah")
+    private val excludedLabels = setOf("medina", "kasbah", "desert")
 
     override fun onCreate() {
         super.onCreate()
@@ -160,7 +160,7 @@ class LoggingService : LifecycleService() {
         )
         val notification: Notification = NotificationCompat.Builder(this, channelId)
             .setContentTitle("Logging active")
-            .setContentText("Capturing images and processing labels every 5 sec")
+            .setContentText("Capturing images and processing labels every 15 sec")
             .setSmallIcon(android.R.drawable.ic_menu_camera)
             .setContentIntent(pendingIntent)
             .build()
