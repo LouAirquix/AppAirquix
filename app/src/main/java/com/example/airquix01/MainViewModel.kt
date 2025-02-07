@@ -9,14 +9,18 @@ import java.io.File
 import java.io.FileWriter
 import java.text.SimpleDateFormat
 import java.util.*
-import kotlin.math.max
+import kotlin.math.abs
 
 class MainViewModel : ViewModel() {
 
-    // Flag, ob Logging aktiv ist
+    // -------------------------------------------
+    // A) States für Live-Anzeige und Datenhaltung
+    // -------------------------------------------
+
+    // Logging-Status
     val isLogging = mutableStateOf(false)
 
-    // Felder für Places365 (AlexNet) Ergebnisse
+    // Places365 (AlexNet) Top-5
     val currentPlacesTop1 = mutableStateOf("Unknown")
     val currentPlacesTop1Confidence = mutableStateOf(0f)
     val currentPlacesTop2 = mutableStateOf("Unknown")
@@ -28,36 +32,112 @@ class MainViewModel : ViewModel() {
     val currentPlacesTop5 = mutableStateOf("Unknown")
     val currentPlacesTop5Confidence = mutableStateOf(0f)
 
-    // Neuer State für den Indoor/Outdoor-Typ
+    // Scene Type (z. B. "indoor", "outdoor", "unknown")
     val currentSceneType = mutableStateOf("Unknown")
 
     // Aktivität
+    data class DetectedActivityData(val activityType: String, val confidence: Int)
     val detectedActivity = mutableStateOf<DetectedActivityData?>(null)
 
-    // YamNet: Top-3 (Liste von Label-Confidence-Paaren)
+    // YamNet: Top-3
+    data class LabelConfidence(val label: String, val confidence: Float)
     val currentYamnetTop3 = mutableStateOf<List<LabelConfidence>>(emptyList())
 
-    // Vehicle Top-1
+    // Vehicle-Top1 (z. B. zur Anzeige in der UI)
     val currentVehicleTop1 = mutableStateOf<LabelConfidence?>(null)
 
-    // Logs (für die UI)
+    // -------------------------------------------
+    // B) Logs und CSV-Handling
+    // -------------------------------------------
+
     val logList = mutableStateListOf<String>()
 
-    // CSV-Dateinamen
     private val logsCsvFileName = "all_in_one_logs.csv"
     private val featureCsvFileName = "feature_vectors.csv"
     private var logsCsvFile: File? = null
     private var featureCsvFile: File? = null
 
-    // Aggregator (aggregiert die Places-, Activity- und YamNet-Daten)
-    private val aggregator = TwoMinuteAggregator()
+    fun getLogsCsvFile(): File {
+        if (logsCsvFile == null) {
+            val dir = AirquixApplication.appContext.getExternalFilesDir(null)
+            logsCsvFile = File(dir, logsCsvFileName)
+            if (!logsCsvFile!!.exists()) {
+                logsCsvFile!!.writeText(
+                    "timestamp,PLACES_top1,places_top1_conf,PLACES_top2,places_top2_conf," +
+                            "PLACES_top3,places_top3_conf,PLACES_top4,places_top4_conf," +
+                            "PLACES_top5,places_top5_conf,SCENE_TYPE,ACT,ACT_confidence," +
+                            "YAMNET_top1,top1_conf,YAMNET_top2,top2_conf,YAMNET_top3,top3_conf," +
+                            "VEHICLE_label,vehicle_conf\n"
+                )
+            }
+        }
+        return logsCsvFile!!
+    }
 
-    data class DetectedActivityData(val activityType: String, val confidence: Int)
-    data class LabelConfidence(val label: String, val confidence: Float)
+    fun getFeatureCsvFile(): File {
+        if (featureCsvFile == null) {
+            val dir = AirquixApplication.appContext.getExternalFilesDir(null)
+            featureCsvFile = File(dir, featureCsvFileName)
+            if (!featureCsvFile!!.exists()) {
+                featureCsvFile!!.writeText(
+                    "timestamp," +
+                            "places_top1,places_top1_conf," +
+                            "places_top2,places_top2_conf," +
+                            "places_top3,places_top3_conf," +
+                            "places_top4,places_top4_conf," +
+                            "places_top5,places_top5_conf," +
+                            "scene_type_majority," +
+                            "scene_type_aggregated_io," +
+                            "activity_label,activity_confidence," +
+                            "yamnet_top1,avg_conf1," +
+                            "yamnet_top2,avg_conf2," +
+                            "yamnet_top3,avg_conf3," +
+                            "yamnet_global_top1,global_conf1," +
+                            "yamnet_global_top2,global_conf2," +
+                            "yamnet_single_top1,single_conf1," +
+                            "yamnet_single_top2,single_conf2," +
+                            "vehicle_top1_agg\n"
+                )
+            }
+        }
+        return featureCsvFile!!
+    }
 
-    /**
-     * Falls ein String Kommata oder Anführungszeichen enthält, wird er für CSV-Zeilen maskiert.
-     */
+    fun clearAllLogs() {
+        logList.clear()
+        val logsFile = getLogsCsvFile()
+        if (logsFile.exists()) logsFile.delete()
+        logsFile.writeText(
+            "timestamp,PLACES_top1,places_top1_conf,PLACES_top2,places_top2_conf," +
+                    "PLACES_top3,places_top3_conf,PLACES_top4,places_top4_conf," +
+                    "PLACES_top5,places_top5_conf,SCENE_TYPE,ACT,ACT_confidence," +
+                    "YAMNET_top1,top1_conf,YAMNET_top2,top2_conf,YAMNET_top3,top3_conf," +
+                    "VEHICLE_label,vehicle_conf\n"
+        )
+
+        val featureFile = getFeatureCsvFile()
+        if (featureFile.exists()) featureFile.delete()
+        featureFile.writeText(
+            "timestamp," +
+                    "places_top1,places_top1_conf," +
+                    "places_top2,places_top2_conf," +
+                    "places_top3,places_top3_conf," +
+                    "places_top4,places_top4_conf," +
+                    "places_top5,places_top5_conf," +
+                    "scene_type_majority," +
+                    "scene_type_aggregated_io," +
+                    "activity_label,activity_confidence," +
+                    "yamnet_top1,avg_conf1," +
+                    "yamnet_top2,avg_conf2," +
+                    "yamnet_top3,avg_conf3," +
+                    "yamnet_global_top1,global_conf1," +
+                    "yamnet_global_top2,global_conf2," +
+                    "yamnet_single_top1,single_conf1," +
+                    "yamnet_single_top2,single_conf2," +
+                    "vehicle_top1_agg\n"
+        )
+    }
+
     private fun csvEscape(str: String?): String {
         if (str == null) return ""
         return if (str.contains(",") || str.contains("\"")) {
@@ -68,21 +148,14 @@ class MainViewModel : ViewModel() {
     }
 
     /**
-     * Erzeugt und fügt eine Logzeile hinzu.
+     * Diese Methode wird alle 5 Sekunden vom LoggingService aufgerufen,
+     * um den aktuellen Zustand zu protokollieren und gleichzeitig die Daten
+     * für den 2-Minuten-Aggregator zu sammeln.
      *
-     * CSV-Spalten (getrennt durch Kommas):
+     * CSV-Spalten (in all_in_one_logs.csv):
      * 0: timestamp
-     * 1: PLACES_top1, 2: places_top1_conf
-     * 3: PLACES_top2, 4: places_top2_conf
-     * 5: PLACES_top3, 6: places_top3_conf
-     * 7: PLACES_top4, 8: places_top4_conf
-     * 9: PLACES_top5, 10: places_top5_conf
-     * 11: SCENE_TYPE
-     * 12: ACT, 13: ACT_confidence
-     * 14: YAMNET_top1, 15: top1_conf
-     * 16: YAMNET_top2, 17: top2_conf
-     * 18: YAMNET_top3, 19: top3_conf
-     * 20: VEHICLE_label, 21: vehicle_conf
+     * 1: PLACES_top1, 2: places_top1_conf, 3: PLACES_top2, 4: places_top2_conf, …
+     * 21: VEHICLE_label, 22: vehicle_conf
      */
     fun appendLog(
         timeStr: String,
@@ -120,220 +193,283 @@ class MainViewModel : ViewModel() {
             val top1 = yamTop3.getOrNull(0)
             val top2 = yamTop3.getOrNull(1)
             val top3 = yamTop3.getOrNull(2)
-            val top1Label = csvEscape(top1?.label ?: "none")
-            val top1Conf = "%.2f".format(Locale.US, top1?.confidence ?: 0f)
-            val top2Label = csvEscape(top2?.label ?: "none")
-            val top2Conf = "%.2f".format(Locale.US, top2?.confidence ?: 0f)
-            val top3Label = csvEscape(top3?.label ?: "none")
-            val top3Conf = "%.2f".format(Locale.US, top3?.confidence ?: 0f)
-            append(top1Label).append(",")
-            append(top1Conf).append(",")
-            append(top2Label).append(",")
-            append(top2Conf).append(",")
-            append(top3Label).append(",")
-            append(top3Conf).append(",")
+            append(csvEscape(top1?.label ?: "none")).append(",")
+            append("%.2f".format(Locale.US, top1?.confidence ?: 0f)).append(",")
+            append(csvEscape(top2?.label ?: "none")).append(",")
+            append("%.2f".format(Locale.US, top2?.confidence ?: 0f)).append(",")
+            append(csvEscape(top3?.label ?: "none")).append(",")
+            append("%.2f".format(Locale.US, top3?.confidence ?: 0f)).append(",")
             append(csvEscape(veh?.label ?: "none")).append(",")
             append("%.2f".format(Locale.US, veh?.confidence ?: 0f))
         }
+
         logList.add(0, line)
         try {
-            val file = getLogsCsvFile()
-            FileWriter(file, true).use { writer ->
+            FileWriter(getLogsCsvFile(), true).use { writer ->
                 writer.appendLine(line)
             }
         } catch (e: Exception) {
             e.printStackTrace()
         }
+
+        // Übergabe der Daten an den Aggregator, inkl. des Vehicle-Parameters.
         aggregator.addData(
-            places = Pair(
-                Pair(placesTop1, placesTop1Conf),
-                Pair(placesTop2, placesTop2Conf)
-            ),
-            act = detectedActivity.value,
-            yamTop3 = yamTop3
-        )
-        Log.d("MainViewModel", "LOGGED -> $line")
-    }
-
-    fun getLogsCsvFile(): File {
-        if (logsCsvFile == null) {
-            val dir = AirquixApplication.appContext.getExternalFilesDir(null)
-            logsCsvFile = File(dir, logsCsvFileName)
-            if (!logsCsvFile!!.exists()) {
-                logsCsvFile!!.writeText(
-                    "timestamp,PLACES_top1,places_top1_conf,PLACES_top2,places_top2_conf,PLACES_top3,places_top3_conf,PLACES_top4,places_top4_conf,PLACES_top5,places_top5_conf,SCENE_TYPE,ACT,ACT_confidence," +
-                            "YAMNET_top1,top1_conf,YAMNET_top2,top2_conf,YAMNET_top3,top3_conf,VEHICLE_label,vehicle_conf\n"
-                )
-            }
-        }
-        return logsCsvFile!!
-    }
-
-    fun getFeatureCsvFile(): File {
-        if (featureCsvFile == null) {
-            val dir = AirquixApplication.appContext.getExternalFilesDir(null)
-            featureCsvFile = File(dir, featureCsvFileName)
-            if (!featureCsvFile!!.exists()) {
-                featureCsvFile!!.writeText(
-                    "timestamp," +
-                            "PLACES_top1,places_top1_conf,PLACES_top2,places_top2_conf,PLACES_top3,places_top3_conf,PLACES_top4,places_top4_conf,PLACES_top5,places_top5_conf," +
-                            "SCENE_TYPE,ACT,act_conf_avg," +
-                            "YAMNET_top1,top1_conf,YAMNET_top2,top2_conf,YAMNET_top3,top3_conf," +
-                            "YAMNET_top1_global_label,top1_global_conf," +
-                            "YAMNET_top2_global_label,top2_global_conf," +
-                            "YAMNET_top1_single_label,top1_single_conf," +
-                            "YAMNET_top2_single_label,top2_single_conf\n"
-                )
-            }
-        }
-        return featureCsvFile!!
-    }
-
-    private fun saveFeatureVectorLine(line: String) {
-        try {
-            val file = getFeatureCsvFile()
-            FileWriter(file, true).use { writer ->
-                writer.appendLine(line)
-            }
-            Log.d("MainViewModel", "FEATURE -> $line")
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-    }
-
-    fun clearAllLogs() {
-        logList.clear()
-        val logsFile = getLogsCsvFile()
-        if (logsFile.exists()) {
-            logsFile.delete()
-        }
-        logsFile.writeText(
-            "timestamp,PLACES_top1,places_top1_conf,PLACES_top2,places_top2_conf,PLACES_top3,places_top3_conf,PLACES_top4,places_top4_conf,PLACES_top5,places_top5_conf,SCENE_TYPE,ACT,ACT_confidence," +
-                    "YAMNET_top1,top1_conf,YAMNET_top2,top2_conf,YAMNET_top3,top3_conf,VEHICLE_label,vehicle_conf\n"
-        )
-        val featureFile = getFeatureCsvFile()
-        if (featureFile.exists()) {
-            featureFile.delete()
-        }
-        featureFile.writeText(
-            "timestamp," +
-                    "PLACES_top1,places_top1_conf,PLACES_top2,places_top2_conf,PLACES_top3,places_top3_conf,PLACES_top4,places_top4_conf,PLACES_top5,places_top5_conf," +
-                    "SCENE_TYPE,ACT,act_conf_avg," +
-                    "YAMNET_top1,top1_conf,YAMNET_top2,top2_conf,YAMNET_top3,top3_conf," +
-                    "YAMNET_top1_global_label,top1_global_conf," +
-                    "YAMNET_top2_global_label,top2_global_conf," +
-                    "YAMNET_top1_single_label,top1_single_conf," +
-                    "YAMNET_top2_single_label,top2_single_conf\n"
+            timeStr = timeStr,
+            placesTop1 = Pair(placesTop1, placesTop1Conf),
+            placesTop2 = Pair(placesTop2, placesTop2Conf),
+            placesTop3 = Pair(placesTop3, placesTop3Conf),
+            placesTop4 = Pair(placesTop4, placesTop4Conf),
+            placesTop5 = Pair(placesTop5, placesTop5Conf),
+            sceneType = sceneType,
+            ioValue = when {
+                sceneType.equals("indoor", ignoreCase = true) -> 1f
+                sceneType.equals("outdoor", ignoreCase = true) -> 2f
+                else -> 1.5f
+            },
+            activity = act to actConf,
+            yamTop3 = yamTop3,
+            vehicle = veh
         )
     }
 
-    // Aggregator (aggregiert Places-, Activity- und YamNet-Daten)
+    // -------------------------------------------
+    // C) 2-Minuten-Aggregator für Feature-Vektoren
+    // -------------------------------------------
+
+    // Diese Datenklasse fasst die Places-Daten zusammen.
+    private data class PlacesData(
+        val top1: Pair<String, Float>,
+        val top2: Pair<String, Float>,
+        val top3: Pair<String, Float>,
+        val top4: Pair<String, Float>,
+        val top5: Pair<String, Float>
+    )
+
+    private val aggregator = TwoMinuteAggregator()
+
     inner class TwoMinuteAggregator {
-        private val placesBuffer = mutableListOf<Pair<Pair<String, Float>, Pair<String, Float>>>()
-        private val actBuffer = mutableListOf<DetectedActivityData>()
-        private val yamBuffer = mutableListOf<List<LabelConfidence>>()
+        // Buffer für die gesammelten Einträge (alle 5 Sekunden)
+        private val placesBuffer = mutableListOf<PlacesData>()
+        private val sceneTypes = mutableListOf<String>()
+        private val ioValues = mutableListOf<Float>()
+        private val activityBuffer = mutableListOf<Pair<String, Int>>()
+        private val yamnetBuffer = mutableListOf<List<LabelConfidence>>()
+        // Neuer Buffer für Vehicle-Top1-Werte
+        private val vehicleBuffer = mutableListOf<LabelConfidence?>()
+
         private var counter = 0
 
         fun addData(
-            places: Pair<Pair<String, Float>, Pair<String, Float>>,
-            act: DetectedActivityData?,
-            yamTop3: List<LabelConfidence>
+            timeStr: String,
+            placesTop1: Pair<String, Float>,
+            placesTop2: Pair<String, Float>,
+            placesTop3: Pair<String, Float>,
+            placesTop4: Pair<String, Float>,
+            placesTop5: Pair<String, Float>,
+            sceneType: String,
+            ioValue: Float,
+            activity: Pair<String, Int>,
+            yamTop3: List<LabelConfidence>,
+            vehicle: LabelConfidence?
         ) {
-            placesBuffer.add(places)
-            if (act != null) {
-                actBuffer.add(act)
-            }
-            yamBuffer.add(yamTop3)
+            placesBuffer.add(PlacesData(placesTop1, placesTop2, placesTop3, placesTop4, placesTop5))
+            sceneTypes.add(sceneType)
+            ioValues.add(ioValue)
+            activityBuffer.add(activity)
+            yamnetBuffer.add(yamTop3)
+            vehicleBuffer.add(vehicle)
+
             counter++
-            if (counter >= 120) {
+            // Sobald ca. 2 Minuten (24 Einträge à 5 Sekunden) gesammelt wurden:
+            if (counter >= 24) {
                 createFeatureVectorAndSave()
                 placesBuffer.clear()
-                actBuffer.clear()
-                yamBuffer.clear()
+                sceneTypes.clear()
+                ioValues.clear()
+                activityBuffer.clear()
+                yamnetBuffer.clear()
+                vehicleBuffer.clear()
                 counter = 0
             }
         }
 
         private fun createFeatureVectorAndSave() {
             val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
-                .format(Date(System.currentTimeMillis()))
-            val placesTop1 = placesBuffer.firstOrNull()?.first?.first ?: "Unknown"
-            val placesTop2 = placesBuffer.firstOrNull()?.second?.first ?: "Unknown"
-            val actLabel = if (actBuffer.isNotEmpty()) {
-                val freqMap = mutableMapOf<String, Int>()
-                actBuffer.forEach { a ->
-                    freqMap[a.activityType] = freqMap.getOrDefault(a.activityType, 0) + 1
-                }
-                freqMap.maxByOrNull { it.value }?.key ?: "unknown"
-            } else "unknown"
-            val actConfAvg = if (actBuffer.isNotEmpty()) actBuffer.sumOf { it.confidence.toDouble() }.toFloat() / actBuffer.size else 0f
-            val (top3Labels, top3Confs) = calculateTop3Yamnet()
-            val (globalTop2Labels, globalTop2Confs) = calculateGlobalTop2Yamnet()
-            val (singleTop2Labels, singleTop2Confs) = calculateSingleTop2Yamnet()
+                .format(Date())
 
+            // 1) Aggregation der Places-Labels (Top 5)
+            val placeCountMap = mutableMapOf<String, Pair<Int, Float>>() // label -> (Anzahl, Summe der Konfidenzen)
+            for (pd in placesBuffer) {
+                listOf(pd.top1, pd.top2, pd.top3, pd.top4, pd.top5).forEach { (label, conf) ->
+                    val oldVal = placeCountMap[label] ?: (0 to 0f)
+                    placeCountMap[label] = Pair(oldVal.first + 1, oldVal.second + conf)
+                }
+            }
+            val sortedPlaces = placeCountMap.entries.sortedWith(
+                compareByDescending<Map.Entry<String, Pair<Int, Float>>> { it.value.first }
+                    .thenByDescending { it.value.second / it.value.first }
+            )
+            val top5 = sortedPlaces.take(5)
+            val final5 = (0 until 5).map { i ->
+                if (i < top5.size) {
+                    val (lbl, pair) = top5[i]
+                    val avgConf = if (pair.first > 0) pair.second / pair.first else 0f
+                    lbl to avgConf
+                } else {
+                    "none" to 0f
+                }
+            }
+
+            // 2) Häufigster Scene Type
+            val sceneCountMap = sceneTypes.groupingBy { it }.eachCount()
+            val sceneMajor = sceneCountMap.maxByOrNull { it.value }?.key ?: "unknown"
+
+            // 3) Aggregation des IO-Mappings
+            val avgIO = if (ioValues.isNotEmpty()) ioValues.sum() / ioValues.size else 1.5f
+            val sceneIO = when {
+                abs(avgIO - 1.5f) < 0.2f -> "unknown"
+                avgIO < 1.5f -> "indoor"
+                else -> "outdoor"
+            }
+
+            // 4) Aggregation der Aktivität
+            val hasVehicle = activityBuffer.any { it.first.equals("In Vehicle", ignoreCase = true) }
+            val finalActLabel: String
+            val finalActConf: Float
+            if (hasVehicle) {
+                finalActLabel = "vehicle"
+                val vehList = activityBuffer.filter { it.first.equals("In Vehicle", ignoreCase = true) }
+                finalActConf = if (vehList.isNotEmpty()) vehList.map { it.second }.average().toFloat() else 0f
+            } else {
+                val actCountMap = mutableMapOf<String, Pair<Int, Int>>() // label -> (Anzahl, Summe der Konfidenzen)
+                for ((label, conf) in activityBuffer) {
+                    val oldVal = actCountMap[label] ?: (0 to 0)
+                    actCountMap[label] = Pair(oldVal.first + 1, oldVal.second + conf)
+                }
+                val bestAct = actCountMap.maxByOrNull { it.value.first }
+                if (bestAct != null) {
+                    finalActLabel = bestAct.key
+                    finalActConf = if (bestAct.value.first > 0) bestAct.value.second.toFloat() / bestAct.value.first else 0f
+                } else {
+                    finalActLabel = "unknown"
+                    finalActConf = 0f
+                }
+            }
+
+            // 5) Aggregation der YamNet-Audio-Daten
+            // 5a) Häufigste (Top1-3)
+            val freqMap = mutableMapOf<String, Pair<Int, Float>>()
+            yamnetBuffer.forEach { list ->
+                list.forEach { (lbl, conf) ->
+                    val oldVal = freqMap[lbl] ?: (0 to 0f)
+                    freqMap[lbl] = Pair(oldVal.first + 1, oldVal.second + conf)
+                }
+            }
+            val sortedFreq = freqMap.entries.sortedWith(
+                compareByDescending<Map.Entry<String, Pair<Int, Float>>> { it.value.first }
+                    .thenByDescending { it.value.second / it.value.first }
+            )
+            val freqTop3 = sortedFreq.take(3)
+            fun labelAvgConf(e: Map.Entry<String, Pair<Int, Float>>): Pair<String, Float> {
+                return e.key to (if (e.value.first > 0) e.value.second / e.value.first else 0f)
+            }
+            val freqTop1 = freqTop3.getOrNull(0)?.let { labelAvgConf(it) } ?: ("none" to 0f)
+            val freqTop2 = freqTop3.getOrNull(1)?.let { labelAvgConf(it) } ?: ("none" to 0f)
+            val freqTop3p = freqTop3.getOrNull(2)?.let { labelAvgConf(it) } ?: ("none" to 0f)
+
+            // 5b) Globale Top1-2 (Summe der Konfidenzen)
+            val sumMap = mutableMapOf<String, Float>()
+            yamnetBuffer.forEach { list ->
+                list.forEach { (lbl, conf) ->
+                    sumMap[lbl] = sumMap.getOrDefault(lbl, 0f) + conf
+                }
+            }
+            val sortedSum = sumMap.entries.sortedByDescending { it.value }
+            val globTop1 = sortedSum.getOrNull(0)?.let { it.key to it.value } ?: ("none" to 0f)
+            val globTop2 = sortedSum.getOrNull(1)?.let { it.key to it.value } ?: ("none" to 0f)
+
+            // 5c) Single Top1-2 (maximaler Konfidenzwert pro Label)
+            val maxMap = mutableMapOf<String, Float>()
+            yamnetBuffer.forEach { list ->
+                list.forEach { (lbl, conf) ->
+                    val old = maxMap[lbl] ?: 0f
+                    if (conf > old) {
+                        maxMap[lbl] = conf
+                    }
+                }
+            }
+            val sortedMax = maxMap.entries.sortedByDescending { it.value }
+            val singleTop1 = sortedMax.getOrNull(0)?.let { it.key to it.value } ?: ("none" to 0f)
+            val singleTop2 = sortedMax.getOrNull(1)?.let { it.key to it.value } ?: ("none" to 0f)
+
+            // 6) Aggregation der Vehicle-Top1-Daten:
+            // Falls in diesem Zeitraum mindestens einmal das Activity-Label "In Vehicle" aufgetreten ist,
+            // ermitteln wir das am häufigsten vorkommende Vehicle-Label aus dem vehicleBuffer.
+            // Andernfalls setzen wir "None".
+            val vehicleAggLabel = if (finalActLabel.equals("vehicle", ignoreCase = true)) {
+                val vehCountMap = mutableMapOf<String, Int>()
+                for (v in vehicleBuffer) {
+                    if (v != null) {
+                        vehCountMap[v.label] = vehCountMap.getOrDefault(v.label, 0) + 1
+                    }
+                }
+                if (vehCountMap.isNotEmpty()) {
+                    vehCountMap.maxByOrNull { it.value }?.key ?: "None"
+                } else {
+                    "None"
+                }
+            } else {
+                "None"
+            }
+
+            // Erstelle die CSV-Zeile für feature_vectors.csv
             val csvLine = buildString {
                 append(csvEscape(timestamp)).append(",")
-                append(csvEscape(placesTop1)).append(",")
-                append("%.2f".format(Locale.US, placesBuffer.firstOrNull()?.first?.second ?: 0f)).append(",")
-                append(csvEscape(placesTop2)).append(",")
-                append("%.2f".format(Locale.US, placesBuffer.firstOrNull()?.second?.second ?: 0f))
-                // Weitere Aggregationsfelder können hier ergänzt werden
-            }
-            saveFeatureVectorLine(csvLine)
-        }
-
-        private fun calculateTop3Yamnet(): Pair<List<String>, List<Float>> {
-            val labelCount = mutableMapOf<String, Int>()
-            val labelConfSum = mutableMapOf<String, Float>()
-            yamBuffer.forEach { top3List ->
-                top3List.forEach { labelConf ->
-                    labelCount[labelConf.label] = labelCount.getOrDefault(labelConf.label, 0) + 1
-                    labelConfSum[labelConf.label] = labelConfSum.getOrDefault(labelConf.label, 0f) + labelConf.confidence
+                // Places Top1-5
+                final5.forEachIndexed { index, pair ->
+                    append(csvEscape(pair.first)).append(",")
+                    append("%.2f".format(Locale.US, pair.second))
+                    if (index < 4) append(",") else append(",")
                 }
+                append(csvEscape(sceneMajor)).append(",")
+                append(csvEscape(sceneIO)).append(",")
+                append(csvEscape(finalActLabel)).append(",")
+                append("%.2f".format(Locale.US, finalActConf)).append(",")
+                // YamNet – Häufigste Top1-3
+                append(csvEscape(freqTop1.first)).append(",")
+                append("%.2f".format(Locale.US, freqTop1.second)).append(",")
+                append(csvEscape(freqTop2.first)).append(",")
+                append("%.2f".format(Locale.US, freqTop2.second)).append(",")
+                append(csvEscape(freqTop3p.first)).append(",")
+                append("%.2f".format(Locale.US, freqTop3p.second)).append(",")
+                // YamNet – Globale Top1-2
+                append(csvEscape(globTop1.first)).append(",")
+                append("%.2f".format(Locale.US, globTop1.second)).append(",")
+                append(csvEscape(globTop2.first)).append(",")
+                append("%.2f".format(Locale.US, globTop2.second)).append(",")
+                // YamNet – Single Top1-2
+                append(csvEscape(singleTop1.first)).append(",")
+                append("%.2f".format(Locale.US, singleTop1.second)).append(",")
+                append(csvEscape(singleTop2.first)).append(",")
+                append("%.2f".format(Locale.US, singleTop2.second)).append(",")
+                // Neu: Vehicle Aggregation (zusätzliche Spalte)
+                append(csvEscape(vehicleAggLabel))
             }
-            if (labelCount.isEmpty()) return Pair(emptyList(), emptyList())
-            val labelAvgConf = labelConfSum.mapValues { (lbl, sum) -> sum / labelCount[lbl]!! }
-            val sortedLabels = labelCount.keys.sortedWith(
-                compareByDescending<String> { labelCount[it] ?: 0 }
-                    .thenByDescending { labelAvgConf[it] ?: 0f }
-            )
-            val top3 = sortedLabels.take(3)
-            val top3Confs = top3.map { labelAvgConf[it] ?: 0f }
-            return Pair(top3, top3Confs)
-        }
 
-        private fun calculateGlobalTop2Yamnet(): Pair<List<String>, List<Float>> {
-            val labelSum = mutableMapOf<String, Float>()
-            yamBuffer.forEach { top3List ->
-                top3List.forEach { labelConf ->
-                    labelSum[labelConf.label] = labelSum.getOrDefault(labelConf.label, 0f) + labelConf.confidence
+            try {
+                FileWriter(getFeatureCsvFile(), true).use { writer ->
+                    writer.appendLine(csvLine)
                 }
+                Log.d("MainViewModel", "FEATURE -> $csvLine")
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
-            if (labelSum.isEmpty()) return Pair(emptyList(), emptyList())
-            val sorted = labelSum.entries.sortedByDescending { it.value }
-            val top2 = sorted.take(2)
-            val top2Labels = top2.map { it.key }
-            val top2Confs = top2.map { it.value }
-            return Pair(top2Labels, top2Confs)
-        }
-
-        private fun calculateSingleTop2Yamnet(): Pair<List<String>, List<Float>> {
-            val labelMax = mutableMapOf<String, Float>()
-            yamBuffer.forEach { top3List ->
-                top3List.forEach { labelConf ->
-                    val oldVal = labelMax[labelConf.label] ?: 0f
-                    labelMax[labelConf.label] = max(oldVal, labelConf.confidence)
-                }
-            }
-            if (labelMax.isEmpty()) return Pair(emptyList(), emptyList())
-            val sorted = labelMax.entries.sortedByDescending { it.value }
-            val top2 = sorted.take(2)
-            val top2Labels = top2.map { it.key }
-            val top2Confs = top2.map { it.value }
-            return Pair(top2Labels, top2Confs)
         }
     }
 
+    // -------------------------------------------
+    // D) Aktualisierung der Aktivität im ViewModel
+    // -------------------------------------------
     fun updateDetectedActivity(activityType: Int, confidence: Int) {
         val typeString = when (activityType) {
             DetectedActivity.IN_VEHICLE -> "In Vehicle"

@@ -101,7 +101,7 @@ class LoggingService : LifecycleService() {
     )
 
     // Definiere die auszuschließenden Labels (bereinigt)
-    private val excludedLabels = setOf("medina", "catacomb")
+    private val excludedLabels = setOf("medina", "kasbah")
 
     override fun onCreate() {
         super.onCreate()
@@ -160,7 +160,7 @@ class LoggingService : LifecycleService() {
         )
         val notification: Notification = NotificationCompat.Builder(this, channelId)
             .setContentTitle("Logging active")
-            .setContentText("Capturing images and processing labels every 15 sec")
+            .setContentText("Capturing images and processing labels every 5 sec")
             .setSmallIcon(android.R.drawable.ic_menu_camera)
             .setContentIntent(pendingIntent)
             .build()
@@ -317,10 +317,8 @@ class LoggingService : LifecycleService() {
         if (bitmap != null && classificationModel != null && classificationCategories.isNotEmpty()) {
             Log.d("LoggingService", "Image processed. Bitmap size: ${bitmap.width} x ${bitmap.height}")
             serviceScope.launch(Dispatchers.Default) {
-                // Erhalte die Top 5 Ergebnisse von Places365, dabei werden "medina" und "catacomb" ausgeschlossen
-                val results = classifyImageAlexNet(bitmap, classificationModel!!, classificationCategories)
-                // Bestimme den Scene-Typ (indoor/outdoor) mithilfe des IO-Mappings
-                val sceneType = determineSceneType(results)
+                // Verwende die modifizierte Klassifikation, die ein Pair aus PlacesResults und dem aggregierten Scene Type zurückgibt.
+                val (results, sceneType) = classifyImageAlexNet(bitmap, classificationModel!!, classificationCategories)
                 withContext(Dispatchers.Main) {
                     viewModel.currentPlacesTop1.value = results.top1.first
                     viewModel.currentPlacesTop1Confidence.value = results.top1.second
@@ -354,12 +352,15 @@ class LoggingService : LifecycleService() {
      * Führt die AlexNet-Klassifikation für Places365 durch.
      * Skaliert das Bitmap auf 224x224, erstellt einen Tensor, führt Inferenz durch und ermittelt die Top 5.
      * Dabei werden Labels, die in excludedLabels enthalten sind, herausgefiltert.
+     * Außerdem wird der Scene Type anhand der aggregierten Wahrscheinlichkeiten über das IO-Mapping bestimmt.
+     *
+     * @return Ein Pair, bestehend aus den PlacesResults und dem ermittelten Scene Type.
      */
     private fun classifyImageAlexNet(
         bitmap: Bitmap,
         model: Module,
         categories: List<String>
-    ): PlacesResults {
+    ): Pair<PlacesResults, String> {
         val resizedBitmap = Bitmap.createScaledBitmap(bitmap, 224, 224, false)
         val inputTensor = TensorImageUtils.bitmapToFloat32Tensor(
             resizedBitmap,
@@ -370,30 +371,23 @@ class LoggingService : LifecycleService() {
         val outputArray = outputTensor.dataAsFloatArray
         val probabilities = softmax(outputArray)
 
-        // Erzeuge Indexed-Objekte, filtere aber zuerst die ausgeschlossenen Labels heraus.
+        // Aggregiere Wahrscheinlichkeiten anhand des IO-Mappings, um den Scene Type zu bestimmen
+        val sceneType = determineSceneType(probabilities)
+
+        // Erzeuge Indexed-Objekte und filtere ausgeschlossene Labels heraus
         val allIndexed = probabilities.withIndex()
         val filteredIndexed = allIndexed.filter { indexed ->
-            // Hole das zugehörige Rohlabel (z. B. "/a/catacomb")
             val rawLabel = categories.getOrElse(indexed.index) { "Unknown" }
+            // Verwende die Memberfunktion cleanLabel
             val cleaned = cleanLabel(rawLabel)
-            // Ausschließen, wenn das Label in der Liste der auszuschließenden Labels steht
             cleaned !in excludedLabels
         }
-
         val top5List = filteredIndexed.sortedByDescending { it.value }.take(5)
-
         val top1 = top5List.getOrNull(0)
         val top2 = top5List.getOrNull(1)
         val top3 = top5List.getOrNull(2)
         val top4 = top5List.getOrNull(3)
         val top5 = top5List.getOrNull(4)
-
-        fun cleanLabel(raw: String): String {
-            return raw.replace(Regex("^/\\w/"), "")
-                .replace(Regex("\\s+\\d+\$"), "")
-                .replace('_', ' ')
-                .trim()
-        }
 
         val label1 = if (top1 != null) cleanLabel(categories.getOrElse(top1.index) { "Unknown" }) else "Unknown"
         val conf1 = top1?.value ?: 0f
@@ -406,13 +400,14 @@ class LoggingService : LifecycleService() {
         val label5 = if (top5 != null) cleanLabel(categories.getOrElse(top5.index) { "Unknown" }) else "Unknown"
         val conf5 = top5?.value ?: 0f
 
-        return PlacesResults(
+        val placesResults = PlacesResults(
             top1 = Pair(label1, conf1),
             top2 = Pair(label2, conf2),
             top3 = Pair(label3, conf3),
             top4 = Pair(label4, conf4),
             top5 = Pair(label5, conf5)
         )
+        return Pair(placesResults, sceneType)
     }
 
     /**
@@ -468,26 +463,30 @@ class LoggingService : LifecycleService() {
     }
 
     /**
-     * Bestimmt den Indoor/Outdoor-Typ anhand des Top-1-Ergebnisses und des IO-Mappings.
-     *
-     * Hier wird angenommen, dass das Top-1-Label (results.top1.first) in der gleichen
-     * Reihenfolge wie in categories_places365.txt steht. Wir suchen den Index des Labels in der Liste.
-     * Falls das Mapping vorhanden ist, geben wir "indoor" zurück, wenn der entsprechende Wert 1 ist,
-     * oder "outdoor" bei 2. Andernfalls "unknown".
+     * Bestimmt den Indoor/Outdoor-Typ anhand der aggregierten Wahrscheinlichkeiten aus dem Softmax-Vektor.
+     * Alle Wahrscheinlichkeiten der Kategorien, die als indoor (1) markiert sind, werden aufsummiert,
+     * ebenso alle Wahrscheinlichkeiten der Kategorien, die als outdoor (2) markiert sind.
+     * Anschließend wird verglichen, welche Summe höher ist.
      */
-    private fun determineSceneType(results: PlacesResults): String {
-        if (ioMapping.isNotEmpty() && classificationCategories.isNotEmpty()) {
-            val top1Label = results.top1.first
-            val cleanedTop1 = cleanLabel(top1Label)
-            val index = classificationCategories.indexOfFirst { cleanLabel(it) == cleanedTop1 }
-            if (index in ioMapping.indices) {
-                return if (ioMapping[index] == 1) "indoor" else "outdoor"
+    private fun determineSceneType(probabilities: FloatArray): String {
+        var indoorSum = 0f
+        var outdoorSum = 0f
+        for (i in probabilities.indices) {
+            if (i < ioMapping.size) {
+                when (ioMapping[i]) {
+                    1 -> indoorSum += probabilities[i]
+                    2 -> outdoorSum += probabilities[i]
+                }
             }
         }
-        return "unknown"
+        Log.d("LoggingService", "IndoorSum: $indoorSum, OutdoorSum: $outdoorSum")
+        return if (indoorSum >= outdoorSum) "indoor" else "outdoor"
     }
 
-    // Hilfsmethode zur Bereinigung von Labels (wie in classifyImageAlexNet verwendet)
+    // ---------------- Private Hilfsfunktion: cleanLabel ----------------
+    /**
+     * Bereinigt ein gegebenes Label, indem führende Pfadteile, Zahlen und Unterstriche entfernt werden.
+     */
     private fun cleanLabel(raw: String): String {
         return raw.replace(Regex("^/\\w/"), "")
             .replace(Regex("\\s+\\d+\$"), "")

@@ -83,7 +83,7 @@
 /c/car_interior 1
 /c/carrousel 2
 /c/castle 2
-/c/catacomb 1
+/c/catacomb 2
 /c/cemetery 2
 /c/chalet 2
 /c/chemistry_lab 1
