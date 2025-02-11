@@ -27,19 +27,18 @@ import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import androidx.exifinterface.media.ExifInterface
 import androidx.lifecycle.LifecycleService
-import com.google.android.gms.location.ActivityRecognition
-import com.google.android.gms.location.ActivityRecognitionClient
+import com.google.android.gms.location.*
 import kotlinx.coroutines.*
 import org.pytorch.IValue
 import org.pytorch.Module
 import org.pytorch.torchvision.TensorImageUtils
+import org.tensorflow.lite.Interpreter
 import java.io.File
 import java.io.FileWriter
 import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.Executors
 import kotlin.math.exp
-import org.tensorflow.lite.Interpreter  // Neuer Import für TFLite
 
 // Datenklasse für die Top-5 Ergebnisse von Places365
 data class PlacesResults(
@@ -60,7 +59,7 @@ class LoggingService : LifecycleService() {
     private lateinit var activityRecognitionClient: ActivityRecognitionClient
     private var activityPendingIntent: PendingIntent? = null
 
-    // Kamera – Verwende den ImageCapture-Use Case (JPEG)
+    // Kamera – ImageCapture Use Case (JPEG)
     private var cameraProvider: ProcessCameraProvider? = null
     private lateinit var imageCapture: ImageCapture
     private val cameraExecutor = Executors.newSingleThreadExecutor()
@@ -85,7 +84,7 @@ class LoggingService : LifecycleService() {
     private var vehicleAudioRecord: android.media.AudioRecord? = null
     private var vehicleJob: Job? = null
 
-    // Allowed label indices und ausgeschlossene Labels (wie bisher)
+    // Allowed label indices und ausgeschlossene Labels
     private val allowedLabelIndices = setOf(
         106, 107, 110, 116, 122, 277, 278, 279, 283, 285, 288, 289, 295, 298, 300, 301, 302, 303, 304,
         305, 308, 310, 311, 312, 313, 314, 315, 316, 317, 318, 319, 320, 321, 323, 324, 325, 326, 327,
@@ -97,6 +96,10 @@ class LoggingService : LifecycleService() {
     private var newModelInterpreter: Interpreter? = null
     private lateinit var newModelLabels: List<String>
     private val newModelInputSize = 160
+
+    // NEU: Location Updates (für die Geschwindigkeitsmessung)
+    private lateinit var fusedLocationClient: FusedLocationProviderClient
+    private var locationCallback: LocationCallback? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -116,15 +119,18 @@ class LoggingService : LifecycleService() {
             Log.e("LoggingService", "Error loading Places365 model or categories", e)
         }
 
-        // NEU: Lade das neue Modell
+        // NEU: Lade das neue TFLite-Modell und die Labels
         loadNewModel()
+
+        // NEU: Starte Location Updates zur Geschwindigkeitsmessung
+        startLocationUpdates()
 
         startForegroundServiceNotification()
         startActivityRecognition()
-        setupCamera() // Startet nach erfolgreicher Kamera-Bindung die periodische Bildaufnahme
+        setupCamera() // Startet periodische Bildaufnahme
         startYamNetClassification()
         startVehicleClassification()
-        startPeriodicLogging()  // Logge alle 5 Sekunden
+        startPeriodicLogging()  // Logge alle 5 Sekunden (inkl. Speed)
     }
 
     override fun onDestroy() {
@@ -133,12 +139,56 @@ class LoggingService : LifecycleService() {
         serviceScope.cancel()
         cameraProvider?.unbindAll()
         cameraExecutor.shutdown()
-        newModelInterpreter?.close() // NEU: Interpreter freigeben
+        newModelInterpreter?.close()
+        stopLocationUpdates()
     }
 
     override fun onBind(intent: Intent): IBinder? {
         super.onBind(intent)
         return null
+    }
+
+    // ---------------- NEU: Location Updates ----------------
+    private fun startLocationUpdates() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+            != PackageManager.PERMISSION_GRANTED &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            Log.e("LoggingService", "Missing Location permission.")
+            return
+        }
+        fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
+        val locationRequest = LocationRequest.create().apply {
+            interval = 3000L // alle 3 Sekunden
+            fastestInterval = 2000L
+            priority = LocationRequest.PRIORITY_HIGH_ACCURACY
+        }
+        locationCallback = object : LocationCallback() {
+            override fun onLocationResult(locationResult: LocationResult) {
+                super.onLocationResult(locationResult)
+                val location = locationResult.lastLocation
+                if (location != null) {
+                    val speed = location.speed  // Geschwindigkeit in m/s
+                    viewModel.currentSpeed.value = speed
+                    Log.d("LoggingService", "Current speed: $speed m/s")
+                }
+            }
+        }
+        fusedLocationClient.requestLocationUpdates(
+            locationRequest,
+            locationCallback as LocationCallback,
+            null
+        )
+        Log.d("LoggingService", "Location Updates started.")
+    }
+
+    private fun stopLocationUpdates() {
+        locationCallback?.let {
+            fusedLocationClient.removeLocationUpdates(it)
+            Log.d("LoggingService", "Location Updates stopped.")
+        }
+        locationCallback = null
     }
 
     // ---------------- Foreground Notification ----------------
@@ -301,7 +351,6 @@ class LoggingService : LifecycleService() {
         if (bitmap != null && classificationModel != null && classificationCategories.isNotEmpty()) {
             Log.d("LoggingService", "Image processed. Bitmap size: ${bitmap.width} x ${bitmap.height}")
             serviceScope.launch(Dispatchers.Default) {
-                // Klassifikation mit AlexNet (Places365)
                 val (results, sceneType) = classifyImageAlexNet(bitmap, classificationModel!!, classificationCategories)
                 withContext(Dispatchers.Main) {
                     viewModel.currentPlacesTop1.value = results.top1.first
@@ -466,7 +515,7 @@ class LoggingService : LifecycleService() {
         return labels
     }
 
-    // ---------------- NEU: Klassifikation mit dem neuen Modell ----------------
+    // ---------------- NEU: Klassifikation mit dem neuen TFLite-Modell ----------------
     private fun classifyNewModel(bitmap: Bitmap): Pair<String, Float> {
         val resizedBitmap = Bitmap.createScaledBitmap(bitmap, newModelInputSize, newModelInputSize, false)
         val inputBuffer = convertBitmapToByteBuffer(resizedBitmap)
@@ -499,7 +548,7 @@ class LoggingService : LifecycleService() {
         return byteBuffer
     }
 
-    // ---------------- YamNet Audio-Klassifikation (wie bisher) ----------------
+    // ---------------- NEU: YamNet Audio-Klassifikation ----------------
     private fun startYamNetClassification() {
         try {
             val modelPath = "lite-model_yamnet_classification_tflite_1.tflite"
@@ -545,7 +594,7 @@ class LoggingService : LifecycleService() {
         Log.d("LoggingService", "YamNet classification stopped.")
     }
 
-    // ---------------- Vehicle Audio-Klassifikation (wie bisher) ----------------
+    // ---------------- NEU: Vehicle Audio-Klassifikation ----------------
     private fun startVehicleClassification() {
         try {
             val vehicleModelPath = "vehicle_sounds.tflite"
@@ -587,7 +636,7 @@ class LoggingService : LifecycleService() {
         Log.d("LoggingService", "Vehicle classification stopped.")
     }
 
-    // ---------------- Periodisches Logging (alle 5 Sekunden) ----------------
+    // ---------------- NEU: Periodisches Logging (alle 5 Sekunden) ----------------
     private fun startPeriodicLogging() {
         serviceScope.launch {
             val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
@@ -611,6 +660,8 @@ class LoggingService : LifecycleService() {
                 val yamTop3 = viewModel.currentYamnetTop3.value
                 val veh = viewModel.currentVehicleTop1.value
                 val newModelOutput = viewModel.currentNewModelOutput.value
+                val speed = viewModel.currentSpeed.value  // in m/s
+
                 viewModel.appendLog(
                     timeStr = timeStr,
                     placesTop1 = placesTop1,
@@ -629,7 +680,8 @@ class LoggingService : LifecycleService() {
                     yamTop3 = yamTop3,
                     veh = veh,
                     newModelLabel = newModelOutput.first,
-                    newModelConf = newModelOutput.second
+                    newModelConf = newModelOutput.second,
+                    speed = speed
                 )
             }
         }

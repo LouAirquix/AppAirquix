@@ -28,7 +28,7 @@ class MainViewModel : ViewModel() {
     val currentPlacesTop5 = mutableStateOf("Unknown")
     val currentPlacesTop5Confidence = mutableStateOf(0f)
 
-    // Scene Type (z. B. "indoor" oder "outdoor")
+    // Scene Type (z. B. "indoor" oder "outdoor")
     val currentSceneType = mutableStateOf("Unknown")
 
     // Aktivität
@@ -42,8 +42,12 @@ class MainViewModel : ViewModel() {
     // Vehicle (Top-1) – für die UI-Anzeige
     val currentVehicleTop1 = mutableStateOf<LabelConfidence?>(null)
 
-    // NEU: Ausgabe des neuen Modells (z. B. MobileNetV2)
+    // NEU: Ausgabe des neuen Modells (z. B. MobileNetV2)
     val currentNewModelOutput = mutableStateOf<Pair<String, Float>>(Pair("Unknown", 0f))
+
+    // NEU: Aktuelle Geschwindigkeit in m/s (Geschwindigkeit von den GPS-Daten)
+    val currentSpeed = mutableStateOf(0f)
+
 
     // B) Logs und CSV-Handling
     val logList = mutableStateListOf<String>()
@@ -63,7 +67,7 @@ class MainViewModel : ViewModel() {
                             "PLACES_top3,places_top3_conf,PLACES_top4,places_top4_conf," +
                             "PLACES_top5,places_top5_conf,SCENE_TYPE,ACT,ACT_confidence," +
                             "YAMNET_top1,top1_conf,YAMNET_top2,top2_conf,YAMNET_top3,top3_conf," +
-                            "VEHICLE_label,vehicle_conf,NEW_MODEL_LABEL,NEW_MODEL_CONF\n"
+                            "VEHICLE_label,vehicle_conf,NEW_MODEL_LABEL,NEW_MODEL_CONF,SPEED_m_s\n"
                 )
             }
         }
@@ -110,7 +114,7 @@ class MainViewModel : ViewModel() {
                     "PLACES_top3,places_top3_conf,PLACES_top4,places_top4_conf," +
                     "PLACES_top5,places_top5_conf,SCENE_TYPE,ACT,ACT_confidence," +
                     "YAMNET_top1,top1_conf,YAMNET_top2,top2_conf,YAMNET_top3,top3_conf," +
-                    "VEHICLE_label,vehicle_conf,NEW_MODEL_LABEL,NEW_MODEL_CONF\n"
+                    "VEHICLE_label,vehicle_conf,NEW_MODEL_LABEL,NEW_MODEL_CONF,SPEED_m_s\n"
         )
 
         val featureFile = getFeatureCsvFile()
@@ -155,7 +159,8 @@ class MainViewModel : ViewModel() {
         yamTop3: List<LabelConfidence>,
         veh: LabelConfidence?,
         newModelLabel: String,
-        newModelConf: Float
+        newModelConf: Float,
+        speed: Float
     ) {
         val line = buildString {
             append(csvEscape(timeStr)).append(",")
@@ -172,6 +177,7 @@ class MainViewModel : ViewModel() {
             append(csvEscape(sceneType)).append(",")
             append(csvEscape(act)).append(",")
             append(actConf).append(",")
+
             val top1 = yamTop3.getOrNull(0)
             val top2 = yamTop3.getOrNull(1)
             val top3 = yamTop3.getOrNull(2)
@@ -184,7 +190,8 @@ class MainViewModel : ViewModel() {
             append(csvEscape(veh?.label ?: "none")).append(",")
             append("%.2f".format(Locale.US, veh?.confidence ?: 0f)).append(",")
             append(csvEscape(newModelLabel)).append(",")
-            append("%.2f".format(Locale.US, newModelConf))
+            append("%.2f".format(Locale.US, newModelConf)).append(",")
+            append("%.2f".format(Locale.US, speed))
         }
         logList.add(0, line)
         try {
@@ -194,7 +201,6 @@ class MainViewModel : ViewModel() {
         } catch (e: Exception) {
             e.printStackTrace()
         }
-        // Hier könnte auch der 2-Minuten-Aggregator aufgerufen werden, wenn gewünscht.
     }
 
     private fun csvEscape(str: String?): String {
@@ -206,7 +212,7 @@ class MainViewModel : ViewModel() {
         }
     }
 
-    // Methode zur Aktualisierung der Aktivität (wie bisher)
+    // Methode zur Aktualisierung der Aktivität
     fun updateDetectedActivity(activityType: Int, confidence: Int) {
         val typeString = when (activityType) {
             DetectedActivity.IN_VEHICLE -> "In Vehicle"

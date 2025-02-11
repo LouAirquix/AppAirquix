@@ -31,6 +31,7 @@ import com.example.airquix01.ui.theme.MymlkitappTheme
 
 class MainActivity : ComponentActivity() {
 
+    // Launcher zum Anfordern mehrerer Berechtigungen (inklusive Standort)
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
@@ -42,9 +43,64 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    // Prüfe und fordere alle nötigen Berechtigungen an (inklusive Standort)
+    private fun checkAndRequestPermissions() {
+        val needed = mutableListOf<String>()
+
+        // Bestehende Berechtigungen:
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            needed.add(Manifest.permission.CAMERA)
+        }
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            needed.add(Manifest.permission.RECORD_AUDIO)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACTIVITY_RECOGNITION)
+                != PackageManager.PERMISSION_GRANTED
+            ) {
+                needed.add(Manifest.permission.ACTIVITY_RECOGNITION)
+            }
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED
+            ) {
+                needed.add(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+        // Standortberechtigungen:
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            needed.add(Manifest.permission.ACCESS_FINE_LOCATION)
+        }
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            needed.add(Manifest.permission.ACCESS_COARSE_LOCATION)
+        }
+        // Falls Du im Hintergrund Standortupdates benötigst, füge zusätzlich hinzu:
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+                != PackageManager.PERMISSION_GRANTED
+            ) {
+                needed.add(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+            }
+        }
+
+        if (needed.isNotEmpty()) {
+            requestPermissionLauncher.launch(needed.toTypedArray())
+        }
+    }
+
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Berechtigungen prüfen und anfordern:
         checkAndRequestPermissions()
 
         setContent {
@@ -58,7 +114,7 @@ class MainActivity : ComponentActivity() {
                 Scaffold(
                     topBar = {
                         SmallTopAppBar(
-                            title = { Text("Airquix01App - LMU") },
+                            title = { Text("AirquixApp - LMU") },
                             actions = {
                                 IconButton(onClick = { showReadMe = true }) {
                                     Icon(
@@ -153,6 +209,14 @@ class MainActivity : ComponentActivity() {
             }
 
             Spacer(Modifier.height(24.dp))
+
+            // Anzeige der aktuellen Geschwindigkeit (von GPS-Daten)
+            Text(
+                text = "Current Speed: ${viewModel.currentSpeed.value} m/s",
+                style = MaterialTheme.typography.bodyMedium
+            )
+
+            Spacer(Modifier.height(16.dp))
             Text("Logs:", style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(8.dp))
 
@@ -226,6 +290,7 @@ class MainActivity : ComponentActivity() {
         val vehConf = parts.getOrNull(21) ?: ""
         val newModelLabel = parts.getOrNull(22) ?: ""
         val newModelConf = parts.getOrNull(23) ?: ""
+        val speedVal = parts.getOrNull(24) ?: ""
 
         Card(
             modifier = Modifier
@@ -249,6 +314,7 @@ class MainActivity : ComponentActivity() {
                 Text("YAMNET Top-3: $yamTop3 (conf: $yamTop3Conf)")
                 Text("Vehicle Audio: $vehLabel (conf: $vehConf)")
                 Text("Vehicle Image: $newModelLabel (conf: $newModelConf)")
+                Text("Speed (m/s): $speedVal")
             }
         }
     }
@@ -292,37 +358,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun checkAndRequestPermissions() {
-        val needed = mutableListOf<String>()
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
-            != PackageManager.PERMISSION_GRANTED
-        ) {
-            needed.add(Manifest.permission.CAMERA)
-        }
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
-            != PackageManager.PERMISSION_GRANTED
-        ) {
-            needed.add(Manifest.permission.RECORD_AUDIO)
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACTIVITY_RECOGNITION)
-                != PackageManager.PERMISSION_GRANTED
-            ) {
-                needed.add(Manifest.permission.ACTIVITY_RECOGNITION)
-            }
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
-                != PackageManager.PERMISSION_GRANTED
-            ) {
-                needed.add(Manifest.permission.POST_NOTIFICATIONS)
-            }
-        }
-        if (needed.isNotEmpty()) {
-            requestPermissionLauncher.launch(needed.toTypedArray())
-        }
-    }
-
     private fun startLoggingService() {
         val intent = Intent(this, LoggingService::class.java)
         ContextCompat.startForegroundService(this, intent)
@@ -334,7 +369,6 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun shareLogsCsv() {
-        // Hier wird das Application-Objekt korrekt als AirquixApplication gecastet.
         val vm = (applicationContext as AirquixApplication).getMainViewModel()
         val csvFile = vm.getLogsCsvFile()
         if (!csvFile.exists()) {
@@ -355,7 +389,6 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun shareFeatureCsv() {
-        // Auch hier: AirquixApplication statt Airquix01!
         val vm = (applicationContext as AirquixApplication).getMainViewModel()
         val csvFile = vm.getFeatureCsvFile()
         if (!csvFile.exists()) {
