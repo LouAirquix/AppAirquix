@@ -53,7 +53,6 @@ class MainActivity : ComponentActivity() {
                 val app = context.applicationContext as AirquixApplication
                 val viewModel = app.getMainViewModel()
 
-                // State für Read-Me-Dialog
                 var showReadMe by remember { mutableStateOf(false) }
 
                 Scaffold(
@@ -92,9 +91,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // ---------------------------
-    // UI
-    // ---------------------------
     @Composable
     fun MainScreen(
         modifier: Modifier = Modifier,
@@ -110,7 +106,6 @@ class MainActivity : ComponentActivity() {
                 .fillMaxSize()
                 .padding(16.dp)
         ) {
-            // Erste Reihe: Start & Stop
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(16.dp)
@@ -133,7 +128,6 @@ class MainActivity : ComponentActivity() {
 
             Spacer(Modifier.height(16.dp))
 
-            // Zweite Reihe: Clear, Share CSV Logs, Share Feature
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -175,9 +169,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /**
-     * Einfacher CSV-Parser, der Anführungszeichen und Kommas korrekt behandelt.
-     */
     private fun parseCsvLine(line: String): List<String> {
         val result = mutableListOf<String>()
         var current = StringBuilder()
@@ -208,23 +199,6 @@ class MainActivity : ComponentActivity() {
         return result
     }
 
-    /**
-     * Zeigt eine Logzeile in einer Card an.
-     *
-     * Erwartete CSV-Felder (Index):
-     * 0: timestamp
-     * 1: PLACES_top1, 2: places_top1_conf
-     * 3: PLACES_top2, 4: places_top2_conf
-     * 5: PLACES_top3, 6: places_top3_conf
-     * 7: PLACES_top4, 8: places_top4_conf
-     * 9: PLACES_top5, 10: places_top5_conf
-     * 11: SCENE_TYPE
-     * 12: ACT, 13: ACT_confidence
-     * 14: YAMNET_top1, 15: top1_conf
-     * 16: YAMNET_top2, 17: top2_conf
-     * 18: YAMNET_top3, 19: top3_conf
-     * 20: VEHICLE_label, 21: vehicle_conf
-     */
     @Composable
     fun LogItem(logLine: String) {
         val parts = remember(logLine) { parseCsvLine(logLine) }
@@ -250,6 +224,8 @@ class MainActivity : ComponentActivity() {
         val yamTop3Conf = parts.getOrNull(19) ?: ""
         val vehLabel = parts.getOrNull(20) ?: ""
         val vehConf = parts.getOrNull(21) ?: ""
+        val newModelLabel = parts.getOrNull(22) ?: ""
+        val newModelConf = parts.getOrNull(23) ?: ""
 
         Card(
             modifier = Modifier
@@ -271,7 +247,8 @@ class MainActivity : ComponentActivity() {
                 Text("YAMNET Top-1: $yamTop1 (conf: $yamTop1Conf)")
                 Text("YAMNET Top-2: $yamTop2 (conf: $yamTop2Conf)")
                 Text("YAMNET Top-3: $yamTop3 (conf: $yamTop3Conf)")
-                Text("Vehicle (Top-1): $vehLabel (conf: $vehConf)")
+                Text("Vehicle Audio: $vehLabel (conf: $vehConf)")
+                Text("Vehicle Image: $newModelLabel (conf: $newModelConf)")
             }
         }
     }
@@ -315,9 +292,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // ---------------------------
-    // Berechtigungen
-    // ---------------------------
     private fun checkAndRequestPermissions() {
         val needed = mutableListOf<String>()
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
@@ -360,6 +334,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun shareLogsCsv() {
+        // Hier wird das Application-Objekt korrekt als AirquixApplication gecastet.
         val vm = (applicationContext as AirquixApplication).getMainViewModel()
         val csvFile = vm.getLogsCsvFile()
         if (!csvFile.exists()) {
@@ -380,6 +355,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun shareFeatureCsv() {
+        // Auch hier: AirquixApplication statt Airquix01!
         val vm = (applicationContext as AirquixApplication).getMainViewModel()
         val csvFile = vm.getFeatureCsvFile()
         if (!csvFile.exists()) {

@@ -29,25 +29,17 @@ import androidx.exifinterface.media.ExifInterface
 import androidx.lifecycle.LifecycleService
 import com.google.android.gms.location.ActivityRecognition
 import com.google.android.gms.location.ActivityRecognitionClient
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.*
 import org.pytorch.IValue
 import org.pytorch.Module
 import org.pytorch.torchvision.TensorImageUtils
 import java.io.File
 import java.io.FileWriter
 import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import java.util.*
 import java.util.concurrent.Executors
 import kotlin.math.exp
+import org.tensorflow.lite.Interpreter  // Neuer Import für TFLite
 
 // Datenklasse für die Top-5 Ergebnisse von Places365
 data class PlacesResults(
@@ -60,7 +52,7 @@ data class PlacesResults(
 
 class LoggingService : LifecycleService() {
 
-    // Service-spezifischer CoroutineScope (Default-Dispatcher)
+    // Service-spezifischer CoroutineScope
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private lateinit var viewModel: MainViewModel
 
@@ -80,7 +72,7 @@ class LoggingService : LifecycleService() {
     private var classificationModel: Module? = null
     private var classificationCategories: List<String> = emptyList()
 
-    // IO-Mapping: Liste, die zu jedem Klassenindex (0 bis 364) angibt, ob indoor (1) oder outdoor (2)
+    // IO-Mapping
     private var ioMapping: List<Int> = emptyList()
 
     // YamNet Audio-Klassifikation
@@ -93,15 +85,18 @@ class LoggingService : LifecycleService() {
     private var vehicleAudioRecord: android.media.AudioRecord? = null
     private var vehicleJob: Job? = null
 
-    // Allowed label indices für YamNet (wie bisher)
+    // Allowed label indices und ausgeschlossene Labels (wie bisher)
     private val allowedLabelIndices = setOf(
         106, 107, 110, 116, 122, 277, 278, 279, 283, 285, 288, 289, 295, 298, 300, 301, 302, 303, 304,
         305, 308, 310, 311, 312, 313, 314, 315, 316, 317, 318, 319, 320, 321, 323, 324, 325, 326, 327,
         328, 329, 330, 331, 352, 354, 355, 357, 358, 359, 378, 380, 500, 501, 502, 503, 504, 508, 517, 519, 520
     )
-
-    // Definiere die auszuschließenden Labels (bereinigt)
     private val excludedLabels = setOf("medina", "kasbah", "desert")
+
+    // NEU: Variablen für das neue TFLite-Modell
+    private var newModelInterpreter: Interpreter? = null
+    private lateinit var newModelLabels: List<String>
+    private val newModelInputSize = 160
 
     override fun onCreate() {
         super.onCreate()
@@ -109,10 +104,10 @@ class LoggingService : LifecycleService() {
         viewModel = app.getMainViewModel()
         viewModel.isLogging.value = true
 
-        // Lade das IO-Mapping aus der Datei IO_places365.txt
+        // Lade IO-Mapping
         ioMapping = loadIOFile("IO_places365.txt")
 
-        // Lade Modell und Kategorien
+        // Lade Places365-Modell und Kategorien
         try {
             classificationModel = Module.load(assetFilePath("alexnet_places365_quantized.pt"))
             classificationCategories = loadCategories("categories_places365.txt")
@@ -120,6 +115,9 @@ class LoggingService : LifecycleService() {
         } catch (e: Exception) {
             Log.e("LoggingService", "Error loading Places365 model or categories", e)
         }
+
+        // NEU: Lade das neue Modell
+        loadNewModel()
 
         startForegroundServiceNotification()
         startActivityRecognition()
@@ -135,6 +133,7 @@ class LoggingService : LifecycleService() {
         serviceScope.cancel()
         cameraProvider?.unbindAll()
         cameraExecutor.shutdown()
+        newModelInterpreter?.close() // NEU: Interpreter freigeben
     }
 
     override fun onBind(intent: Intent): IBinder? {
@@ -220,8 +219,6 @@ class LoggingService : LifecycleService() {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
         cameraProviderFuture.addListener({
             cameraProvider = cameraProviderFuture.get()
-
-            // Dummy-Preview (wird benötigt, auch wenn nur Bilder aufgenommen werden)
             val preview = Preview.Builder().build()
             preview.setSurfaceProvider { request ->
                 val texture = SurfaceTexture(0)
@@ -232,13 +229,10 @@ class LoggingService : LifecycleService() {
                     texture.release()
                 }
             }
-
-            // ImageCapture-Use Case: Maximale Qualität und Zielauflösung
             imageCapture = ImageCapture.Builder()
                 .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
                 .setTargetResolution(Size(1920, 1080))
                 .build()
-
             val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
             try {
                 cameraProvider?.unbindAll()
@@ -268,14 +262,10 @@ class LoggingService : LifecycleService() {
         }
     }
 
-    /**
-     * Nimmt ein Bild mit ImageCapture auf, speichert es als JPEG in den Cache und verarbeitet es.
-     */
     private fun captureImage() {
         Thread.sleep(300)
         val photoFile = File(cacheDir, "photo_${System.currentTimeMillis()}.jpg")
         val outputOptions = ImageCapture.OutputFileOptions.Builder(photoFile).build()
-
         imageCapture?.takePicture(
             outputOptions,
             cameraExecutor,
@@ -283,7 +273,6 @@ class LoggingService : LifecycleService() {
                 override fun onError(exception: ImageCaptureException) {
                     Log.e("LoggingService", "Photo capture failed: ${exception.message}", exception)
                 }
-
                 override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
                     val savedUri: Uri = outputFileResults.savedUri ?: Uri.fromFile(photoFile)
                     Log.d("LoggingService", "Photo captured: $savedUri")
@@ -293,10 +282,6 @@ class LoggingService : LifecycleService() {
         )
     }
 
-    /**
-     * Dekodiert das JPEG aus der Datei in ein Bitmap, korrigiert die Orientierung,
-     * führt die Places365-Klassifikation (AlexNet) aus und speichert die Ergebnisse im ViewModel.
-     */
     private fun processCapturedImage(photoFile: File) {
         var bitmap = BitmapFactory.decodeFile(photoFile.absolutePath)
         if (bitmap != null) {
@@ -313,11 +298,10 @@ class LoggingService : LifecycleService() {
                 Log.e("LoggingService", "Error correcting image orientation: ${e.message}")
             }
         }
-
         if (bitmap != null && classificationModel != null && classificationCategories.isNotEmpty()) {
             Log.d("LoggingService", "Image processed. Bitmap size: ${bitmap.width} x ${bitmap.height}")
             serviceScope.launch(Dispatchers.Default) {
-                // Verwende die modifizierte Klassifikation, die ein Pair aus PlacesResults und dem aggregierten Scene Type zurückgibt.
+                // Klassifikation mit AlexNet (Places365)
                 val (results, sceneType) = classifyImageAlexNet(bitmap, classificationModel!!, classificationCategories)
                 withContext(Dispatchers.Main) {
                     viewModel.currentPlacesTop1.value = results.top1.first
@@ -336,26 +320,20 @@ class LoggingService : LifecycleService() {
         } else {
             Log.e("LoggingService", "Failed to decode captured image or model/categories not loaded.")
         }
+        // NEU: Klassifikation mit dem neuen TFLite-Modell
+        if (bitmap != null && newModelInterpreter != null && ::newModelLabels.isInitialized) {
+            val (newLabel, newConfidence) = classifyNewModel(bitmap)
+            viewModel.currentNewModelOutput.value = Pair(newLabel, newConfidence)
+        }
         photoFile.delete()
     }
 
-    /**
-     * Hilfsmethode zum Rotieren eines Bitmaps.
-     */
     private fun rotateBitmap(bitmap: Bitmap, degrees: Float): Bitmap {
         val matrix = Matrix()
         matrix.postRotate(degrees)
         return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
     }
 
-    /**
-     * Führt die AlexNet-Klassifikation für Places365 durch.
-     * Skaliert das Bitmap auf 224x224, erstellt einen Tensor, führt Inferenz durch und ermittelt die Top 5.
-     * Dabei werden Labels, die in excludedLabels enthalten sind, herausgefiltert.
-     * Außerdem wird der Scene Type anhand der aggregierten Wahrscheinlichkeiten über das IO-Mapping bestimmt.
-     *
-     * @return Ein Pair, bestehend aus den PlacesResults und dem ermittelten Scene Type.
-     */
     private fun classifyImageAlexNet(
         bitmap: Bitmap,
         model: Module,
@@ -370,15 +348,10 @@ class LoggingService : LifecycleService() {
         val outputTensor = model.forward(IValue.from(inputTensor)).toTensor()
         val outputArray = outputTensor.dataAsFloatArray
         val probabilities = softmax(outputArray)
-
-        // Aggregiere Wahrscheinlichkeiten anhand des IO-Mappings, um den Scene Type zu bestimmen
         val sceneType = determineSceneType(probabilities)
-
-        // Erzeuge Indexed-Objekte und filtere ausgeschlossene Labels heraus
         val allIndexed = probabilities.withIndex()
         val filteredIndexed = allIndexed.filter { indexed ->
             val rawLabel = categories.getOrElse(indexed.index) { "Unknown" }
-            // Verwende die Memberfunktion cleanLabel
             val cleaned = cleanLabel(rawLabel)
             cleaned !in excludedLabels
         }
@@ -388,7 +361,6 @@ class LoggingService : LifecycleService() {
         val top3 = top5List.getOrNull(2)
         val top4 = top5List.getOrNull(3)
         val top5 = top5List.getOrNull(4)
-
         val label1 = if (top1 != null) cleanLabel(categories.getOrElse(top1.index) { "Unknown" }) else "Unknown"
         val conf1 = top1?.value ?: 0f
         val label2 = if (top2 != null) cleanLabel(categories.getOrElse(top2.index) { "Unknown" }) else "Unknown"
@@ -399,7 +371,6 @@ class LoggingService : LifecycleService() {
         val conf4 = top4?.value ?: 0f
         val label5 = if (top5 != null) cleanLabel(categories.getOrElse(top5.index) { "Unknown" }) else "Unknown"
         val conf5 = top5?.value ?: 0f
-
         val placesResults = PlacesResults(
             top1 = Pair(label1, conf1),
             top2 = Pair(label2, conf2),
@@ -410,9 +381,6 @@ class LoggingService : LifecycleService() {
         return Pair(placesResults, sceneType)
     }
 
-    /**
-     * Berechnet Softmax für ein FloatArray.
-     */
     private fun softmax(scores: FloatArray): FloatArray {
         val max = scores.maxOrNull() ?: 0f
         val expScores = scores.map { exp((it - max).toDouble()).toFloat() }
@@ -420,7 +388,28 @@ class LoggingService : LifecycleService() {
         return expScores.map { it / sumExp }.toFloatArray()
     }
 
-    // ---------------- Hilfsfunktionen zum Laden von Assets ----------------
+    private fun determineSceneType(probabilities: FloatArray): String {
+        var indoorSum = 0f
+        var outdoorSum = 0f
+        for (i in probabilities.indices) {
+            if (i < ioMapping.size) {
+                when (ioMapping[i]) {
+                    1 -> indoorSum += probabilities[i]
+                    2 -> outdoorSum += probabilities[i]
+                }
+            }
+        }
+        Log.d("LoggingService", "IndoorSum: $indoorSum, OutdoorSum: $outdoorSum")
+        return if (indoorSum >= outdoorSum) "indoor" else "outdoor"
+    }
+
+    private fun cleanLabel(raw: String): String {
+        return raw.replace(Regex("^/\\w/"), "")
+            .replace(Regex("\\s+\\d+\$"), "")
+            .replace('_', ' ')
+            .trim()
+    }
+
     private fun assetFilePath(assetName: String): String {
         val file = File(applicationContext.filesDir, assetName)
         if (!file.exists() || file.length() == 0L) {
@@ -441,11 +430,6 @@ class LoggingService : LifecycleService() {
         return categoriesList
     }
 
-    /**
-     * Liest die Datei IO_places365.txt aus den Assets und gibt eine Liste von Integer-Werten zurück,
-     * die für jede Kategorie (entsprechend der Reihenfolge in categories_places365.txt) den Indoor/Outdoor-Typ angibt.
-     * 1 = indoor, 2 = outdoor.
-     */
     private fun loadIOFile(filename: String): List<Int> {
         val result = mutableListOf<Int>()
         applicationContext.assets.open(filename).bufferedReader().useLines { lines ->
@@ -462,39 +446,60 @@ class LoggingService : LifecycleService() {
         return result
     }
 
-    /**
-     * Bestimmt den Indoor/Outdoor-Typ anhand der aggregierten Wahrscheinlichkeiten aus dem Softmax-Vektor.
-     * Alle Wahrscheinlichkeiten der Kategorien, die als indoor (1) markiert sind, werden aufsummiert,
-     * ebenso alle Wahrscheinlichkeiten der Kategorien, die als outdoor (2) markiert sind.
-     * Anschließend wird verglichen, welche Summe höher ist.
-     */
-    private fun determineSceneType(probabilities: FloatArray): String {
-        var indoorSum = 0f
-        var outdoorSum = 0f
-        for (i in probabilities.indices) {
-            if (i < ioMapping.size) {
-                when (ioMapping[i]) {
-                    1 -> indoorSum += probabilities[i]
-                    2 -> outdoorSum += probabilities[i]
-                }
+    // ---------------- NEU: Laden des neuen TFLite-Modells und der Labels ----------------
+    private fun loadNewModel() {
+        try {
+            val modelPath = assetFilePath("my_mobileNet_model.tflite")
+            newModelInterpreter = Interpreter(File(modelPath))
+            newModelLabels = loadLabels("new_model_labels.txt")
+            Log.d("LoggingService", "New model loaded successfully.")
+        } catch (e: Exception) {
+            Log.e("LoggingService", "Error loading new model", e)
+        }
+    }
+
+    private fun loadLabels(filename: String): List<String> {
+        val labels = mutableListOf<String>()
+        applicationContext.assets.open(filename).bufferedReader().useLines { lines ->
+            lines.forEach { labels.add(it.trim()) }
+        }
+        return labels
+    }
+
+    // ---------------- NEU: Klassifikation mit dem neuen Modell ----------------
+    private fun classifyNewModel(bitmap: Bitmap): Pair<String, Float> {
+        val resizedBitmap = Bitmap.createScaledBitmap(bitmap, newModelInputSize, newModelInputSize, false)
+        val inputBuffer = convertBitmapToByteBuffer(resizedBitmap)
+        val output = Array(1) { FloatArray(newModelLabels.size) }
+        newModelInterpreter?.run(inputBuffer, output)
+        val probabilities = softmax(output[0])
+        val maxIndex = probabilities.indices.maxByOrNull { probabilities[it] } ?: -1
+        val label = if (maxIndex != -1) newModelLabels[maxIndex] else "Unknown"
+        val confidence = if (maxIndex != -1) probabilities[maxIndex] else 0f
+        return Pair(label, confidence)
+    }
+
+    private fun convertBitmapToByteBuffer(bitmap: Bitmap): java.nio.ByteBuffer {
+        val byteBuffer = java.nio.ByteBuffer.allocateDirect(4 * newModelInputSize * newModelInputSize * 3)
+        byteBuffer.order(java.nio.ByteOrder.nativeOrder())
+        val intValues = IntArray(newModelInputSize * newModelInputSize)
+        bitmap.getPixels(intValues, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+        var pixel = 0
+        for (i in 0 until newModelInputSize) {
+            for (j in 0 until newModelInputSize) {
+                val pixelValue = intValues[pixel++]
+                val r = ((pixelValue shr 16) and 0xFF)
+                val g = ((pixelValue shr 8) and 0xFF)
+                val b = (pixelValue and 0xFF)
+                byteBuffer.putFloat(r / 127.5f - 1.0f)
+                byteBuffer.putFloat(g / 127.5f - 1.0f)
+                byteBuffer.putFloat(b / 127.5f - 1.0f)
             }
         }
-        Log.d("LoggingService", "IndoorSum: $indoorSum, OutdoorSum: $outdoorSum")
-        return if (indoorSum >= outdoorSum) "indoor" else "outdoor"
+        return byteBuffer
     }
 
-    // ---------------- Private Hilfsfunktion: cleanLabel ----------------
-    /**
-     * Bereinigt ein gegebenes Label, indem führende Pfadteile, Zahlen und Unterstriche entfernt werden.
-     */
-    private fun cleanLabel(raw: String): String {
-        return raw.replace(Regex("^/\\w/"), "")
-            .replace(Regex("\\s+\\d+\$"), "")
-            .replace('_', ' ')
-            .trim()
-    }
-
-    // ---------------- YamNet Audio-Klassifikation ----------------
+    // ---------------- YamNet Audio-Klassifikation (wie bisher) ----------------
     private fun startYamNetClassification() {
         try {
             val modelPath = "lite-model_yamnet_classification_tflite_1.tflite"
@@ -540,7 +545,7 @@ class LoggingService : LifecycleService() {
         Log.d("LoggingService", "YamNet classification stopped.")
     }
 
-    // ---------------- Vehicle Audio-Klassifikation ----------------
+    // ---------------- Vehicle Audio-Klassifikation (wie bisher) ----------------
     private fun startVehicleClassification() {
         try {
             val vehicleModelPath = "vehicle_sounds.tflite"
@@ -605,6 +610,7 @@ class LoggingService : LifecycleService() {
                 val actConf = viewModel.detectedActivity.value?.confidence ?: 0
                 val yamTop3 = viewModel.currentYamnetTop3.value
                 val veh = viewModel.currentVehicleTop1.value
+                val newModelOutput = viewModel.currentNewModelOutput.value
                 viewModel.appendLog(
                     timeStr = timeStr,
                     placesTop1 = placesTop1,
@@ -621,7 +627,9 @@ class LoggingService : LifecycleService() {
                     act = act,
                     actConf = actConf,
                     yamTop3 = yamTop3,
-                    veh = veh
+                    veh = veh,
+                    newModelLabel = newModelOutput.first,
+                    newModelConf = newModelOutput.second
                 )
             }
         }
