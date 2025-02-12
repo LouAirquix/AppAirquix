@@ -528,6 +528,12 @@ class LoggingService : LifecycleService() {
         return Pair(label, confidence)
     }
 
+    /**
+     * Konvertiert das Bitmap (bereits auf die Zielgröße skaliert) in einen ByteBuffer.
+     * Hier werden **keine** Normalisierungen durchgeführt – die rohen Pixelwerte (0–255) werden als Float
+     * direkt übergeben. Das ist korrekt, wenn das TFLite-Modell intern den Preprocessing-Schritt (z.B. via preprocess_input)
+     * durchführt.
+     */
     private fun convertBitmapToByteBuffer(bitmap: Bitmap): java.nio.ByteBuffer {
         val byteBuffer = java.nio.ByteBuffer.allocateDirect(4 * newModelInputSize * newModelInputSize * 3)
         byteBuffer.order(java.nio.ByteOrder.nativeOrder())
@@ -537,12 +543,14 @@ class LoggingService : LifecycleService() {
         for (i in 0 until newModelInputSize) {
             for (j in 0 until newModelInputSize) {
                 val pixelValue = intValues[pixel++]
-                val r = ((pixelValue shr 16) and 0xFF)
-                val g = ((pixelValue shr 8) and 0xFF)
-                val b = (pixelValue and 0xFF)
-                byteBuffer.putFloat(r / 127.5f - 1.0f)
-                byteBuffer.putFloat(g / 127.5f - 1.0f)
-                byteBuffer.putFloat(b / 127.5f - 1.0f)
+                // Hole die Farbwerte als Float im Bereich 0–255
+                val r = ((pixelValue shr 16) and 0xFF).toFloat()
+                val g = ((pixelValue shr 8) and 0xFF).toFloat()
+                val b = (pixelValue and 0xFF).toFloat()
+                // Schreibe die Rohwerte ohne Normalisierung in den ByteBuffer
+                byteBuffer.putFloat(r)
+                byteBuffer.putFloat(g)
+                byteBuffer.putFloat(b)
             }
         }
         return byteBuffer
