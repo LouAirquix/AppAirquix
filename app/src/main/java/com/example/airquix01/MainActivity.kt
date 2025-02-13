@@ -47,7 +47,6 @@ class MainActivity : ComponentActivity() {
     private fun checkAndRequestPermissions() {
         val needed = mutableListOf<String>()
 
-        // Bestehende Berechtigungen:
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
             != PackageManager.PERMISSION_GRANTED
         ) {
@@ -72,7 +71,6 @@ class MainActivity : ComponentActivity() {
                 needed.add(Manifest.permission.POST_NOTIFICATIONS)
             }
         }
-        // Standortberechtigungen:
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
             != PackageManager.PERMISSION_GRANTED
         ) {
@@ -83,7 +81,6 @@ class MainActivity : ComponentActivity() {
         ) {
             needed.add(Manifest.permission.ACCESS_COARSE_LOCATION)
         }
-        // Falls Du im Hintergrund Standortupdates benötigst, füge zusätzlich hinzu:
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_BACKGROUND_LOCATION)
                 != PackageManager.PERMISSION_GRANTED
@@ -91,7 +88,6 @@ class MainActivity : ComponentActivity() {
                 needed.add(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
             }
         }
-
         if (needed.isNotEmpty()) {
             requestPermissionLauncher.launch(needed.toTypedArray())
         }
@@ -100,9 +96,7 @@ class MainActivity : ComponentActivity() {
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Berechtigungen prüfen und anfordern:
         checkAndRequestPermissions()
-
         setContent {
             MymlkitappTheme {
                 val context = LocalContext.current
@@ -210,12 +204,10 @@ class MainActivity : ComponentActivity() {
 
             Spacer(Modifier.height(24.dp))
 
-            // Anzeige der aktuellen Geschwindigkeit (von GPS-Daten)
             Text(
                 text = "Current Speed: ${viewModel.currentSpeed.value} m/s",
                 style = MaterialTheme.typography.bodyMedium
             )
-            // NEU: Anzeige des aktuellen Pegels
             Text(
                 text = "Current Noise: ${"%.2f".format(viewModel.currentPegel.value)} dB",
                 style = MaterialTheme.typography.bodyMedium
@@ -238,6 +230,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    // Hilfsfunktion zum Parsen einer CSV-Zeile
     private fun parseCsvLine(line: String): List<String> {
         val result = mutableListOf<String>()
         var current = StringBuilder()
@@ -270,33 +263,36 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     fun LogItem(logLine: String) {
+        // Um das Formatierungsproblem zu beheben, berücksichtigen wir hier nur die ersten 26 Spalten.
         val parts = remember(logLine) { parseCsvLine(logLine) }
-        val timestamp = parts.getOrNull(0) ?: ""
-        val placesTop1 = parts.getOrNull(1) ?: ""
-        val placesTop1Conf = parts.getOrNull(2) ?: ""
-        val placesTop2 = parts.getOrNull(3) ?: ""
-        val placesTop2Conf = parts.getOrNull(4) ?: ""
-        val placesTop3 = parts.getOrNull(5) ?: ""
-        val placesTop3Conf = parts.getOrNull(6) ?: ""
-        val placesTop4 = parts.getOrNull(7) ?: ""
-        val placesTop4Conf = parts.getOrNull(8) ?: ""
-        val placesTop5 = parts.getOrNull(9) ?: ""
-        val placesTop5Conf = parts.getOrNull(10) ?: ""
-        val sceneType = parts.getOrNull(11) ?: ""
-        val act = parts.getOrNull(12) ?: ""
-        val actConf = parts.getOrNull(13) ?: ""
-        val yamTop1 = parts.getOrNull(14) ?: ""
-        val yamTop1Conf = parts.getOrNull(15) ?: ""
-        val yamTop2 = parts.getOrNull(16) ?: ""
-        val yamTop2Conf = parts.getOrNull(17) ?: ""
-        val yamTop3 = parts.getOrNull(18) ?: ""
-        val yamTop3Conf = parts.getOrNull(19) ?: ""
-        val vehLabel = parts.getOrNull(20) ?: ""
-        val vehConf = parts.getOrNull(21) ?: ""
-        val newModelLabel = parts.getOrNull(22) ?: ""
-        val newModelConf = parts.getOrNull(23) ?: ""
-        val speedVal = parts.getOrNull(24) ?: ""
-        val pegel = parts.getOrNull(25) ?: ""
+        val trimmedParts = if (parts.size > 26) parts.take(26) else parts
+
+        val timestamp = trimmedParts.getOrNull(0) ?: ""
+        val placesTop1 = trimmedParts.getOrNull(1) ?: ""
+        val placesTop1Conf = trimmedParts.getOrNull(2) ?: ""
+        val placesTop2 = trimmedParts.getOrNull(3) ?: ""
+        val placesTop2Conf = trimmedParts.getOrNull(4) ?: ""
+        val placesTop3 = trimmedParts.getOrNull(5) ?: ""
+        val placesTop3Conf = trimmedParts.getOrNull(6) ?: ""
+        val placesTop4 = trimmedParts.getOrNull(7) ?: ""
+        val placesTop4Conf = trimmedParts.getOrNull(8) ?: ""
+        val placesTop5 = trimmedParts.getOrNull(9) ?: ""
+        val placesTop5Conf = trimmedParts.getOrNull(10) ?: ""
+        val sceneType = trimmedParts.getOrNull(11) ?: ""
+        val act = trimmedParts.getOrNull(12) ?: ""
+        val actConf = trimmedParts.getOrNull(13) ?: ""
+        val yamTop1 = trimmedParts.getOrNull(14) ?: ""
+        val yamTop1Conf = trimmedParts.getOrNull(15) ?: ""
+        val yamTop2 = trimmedParts.getOrNull(16) ?: ""
+        val yamTop2Conf = trimmedParts.getOrNull(17) ?: ""
+        val yamTop3 = trimmedParts.getOrNull(18) ?: ""
+        val yamTop3Conf = trimmedParts.getOrNull(19) ?: ""
+        val vehLabel = trimmedParts.getOrNull(20) ?: ""
+        val vehConf = trimmedParts.getOrNull(21) ?: ""
+        val newModelLabel = trimmedParts.getOrNull(22) ?: ""
+        val newModelConf = trimmedParts.getOrNull(23) ?: ""
+        val speedVal = trimmedParts.getOrNull(24) ?: ""
+        val pegel = trimmedParts.getOrNull(25) ?: ""
 
         Card(
             modifier = Modifier

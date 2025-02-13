@@ -378,8 +378,12 @@ class LoggingService : LifecycleService() {
         }
         // NEU: Klassifikation mit dem neuen TFLite-Modell
         if (bitmap != null && newModelInterpreter != null && ::newModelLabels.isInitialized) {
+            // Bestehende Top-1-Berechnung
             val (newLabel, newConfidence) = classifyNewModel(bitmap)
             viewModel.currentNewModelOutput.value = Pair(newLabel, newConfidence)
+            // NEU: Berechne zusätzlich Top-3 Ergebnisse (jetzt vom richtigen Typ)
+            val multiResults = classifyNewModelMulti(bitmap)
+            viewModel.currentNewModelMultiResults.value = multiResults
         }
         photoFile.delete()
     }
@@ -535,6 +539,21 @@ class LoggingService : LifecycleService() {
         return Pair(label, confidence)
     }
 
+    // NEU: Neue Funktion, um Top-3 Ergebnisse (Label + Confidence) vom neuen Modell zu ermitteln
+    private fun classifyNewModelMulti(bitmap: Bitmap): List<MainViewModel.LabelConfidence> {
+        val resizedBitmap = Bitmap.createScaledBitmap(bitmap, newModelInputSize, newModelInputSize, false)
+        val inputBuffer = convertBitmapToByteBuffer(resizedBitmap)
+        val output = Array(1) { FloatArray(newModelLabels.size) }
+        newModelInterpreter?.run(inputBuffer, output)
+        val probabilities = softmax(output[0])
+        // Sortiere die Indizes nach absteigender Wahrscheinlichkeit und nimm die Top-3
+        val sortedIndices = probabilities.indices.sortedByDescending { probabilities[it] }
+        val topPredictions = sortedIndices.take(3).map { index ->
+            MainViewModel.LabelConfidence(newModelLabels[index], probabilities[index])
+        }
+        return topPredictions
+    }
+
     private fun convertBitmapToByteBuffer(bitmap: Bitmap): java.nio.ByteBuffer {
         val byteBuffer = java.nio.ByteBuffer.allocateDirect(4 * newModelInputSize * newModelInputSize * 3)
         byteBuffer.order(java.nio.ByteOrder.nativeOrder())
@@ -580,10 +599,7 @@ class LoggingService : LifecycleService() {
                     }
                     val top3 = filtered.sortedByDescending { it.score }.take(3)
                     val top3LabelConf = top3.map { category ->
-                        MainViewModel.LabelConfidence(
-                            label = category.label,
-                            confidence = category.score
-                        )
+                        MainViewModel.LabelConfidence(category.label, category.score)
                     }
                     viewModel.currentYamnetTop3.value = top3LabelConf
                     delay(500)
@@ -649,12 +665,16 @@ class LoggingService : LifecycleService() {
                 while (isActive) {
                     tensor.load(vehicleAudioRecord!!)
                     val outputs = vehicleClassifier!!.classify(tensor)
-                    val categories = outputs[0].categories
-                    val top1 = categories.maxByOrNull { it.score }
-                    if (top1 != null && top1.score > 0.5f) {
+                    val sortedCategories = outputs[0].categories.sortedByDescending { it.score }
+                    if (sortedCategories.isNotEmpty()) {
+                        val top1 = sortedCategories[0]
                         viewModel.currentVehicleTop1.value = MainViewModel.LabelConfidence(top1.label, top1.score)
+                        // NEU: Speichere zusätzlich Top-3 Ergebnisse
+                        val topVehicleResults = sortedCategories.take(3).map { MainViewModel.LabelConfidence(it.label, it.score) }
+                        viewModel.currentVehicleMultiResults.value = topVehicleResults
                     } else {
                         viewModel.currentVehicleTop1.value = MainViewModel.LabelConfidence("none", 0f)
+                        viewModel.currentVehicleMultiResults.value = emptyList()
                     }
                     delay(500)
                 }
@@ -719,8 +739,7 @@ class LoggingService : LifecycleService() {
                     actConf = actConf,
                     yamTop3 = yamTop3,
                     veh = veh,
-                    newModelLabel = newModelOutput.first,
-                    newModelConf = newModelOutput.second,
+                    newModelTop = newModelOutput,
                     speed = speed,
                     pegel = pegel
                 )
