@@ -96,5 +96,8 @@ dependencies {
     implementation("androidx.compose.ui:ui:1.5.0") // Verwende die neueste Version
     implementation("androidx.compose.material3:material3:1.1.0") // Verwende die neueste Version
 
+    implementation("org.tensorflow:tensorflow-lite-task-audio:0.2.0")
+    implementation("org.tensorflow:tensorflow-lite-support:0.2.0")
+
     // Google Play Services für Activity Recogniti
 }

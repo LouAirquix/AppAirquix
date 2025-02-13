@@ -215,6 +215,11 @@ class MainActivity : ComponentActivity() {
                 text = "Current Speed: ${viewModel.currentSpeed.value} m/s",
                 style = MaterialTheme.typography.bodyMedium
             )
+            // NEU: Anzeige des aktuellen Pegels
+            Text(
+                text = "Current Noise: ${"%.2f".format(viewModel.currentPegel.value)} dB",
+                style = MaterialTheme.typography.bodyMedium
+            )
 
             Spacer(Modifier.height(16.dp))
             Text("Logs:", style = MaterialTheme.typography.titleMedium)
@@ -291,6 +296,7 @@ class MainActivity : ComponentActivity() {
         val newModelLabel = parts.getOrNull(22) ?: ""
         val newModelConf = parts.getOrNull(23) ?: ""
         val speedVal = parts.getOrNull(24) ?: ""
+        val pegel = parts.getOrNull(25) ?: ""
 
         Card(
             modifier = Modifier
@@ -315,6 +321,7 @@ class MainActivity : ComponentActivity() {
                 Text("Vehicle Audio: $vehLabel (conf: $vehConf)")
                 Text("Vehicle Image: $newModelLabel (conf: $newModelConf)")
                 Text("Speed (m/s): $speedVal")
+                Text("Noise (dB): $pegel")
             }
         }
     }

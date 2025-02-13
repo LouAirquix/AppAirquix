@@ -33,12 +33,15 @@ import org.pytorch.IValue
 import org.pytorch.Module
 import org.pytorch.torchvision.TensorImageUtils
 import org.tensorflow.lite.Interpreter
+import org.tensorflow.lite.support.audio.TensorAudio
 import java.io.File
 import java.io.FileWriter
 import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.Executors
 import kotlin.math.exp
+import kotlin.math.log10
+import kotlin.math.sqrt
 
 // Datenklasse für die Top-5 Ergebnisse von Places365
 data class PlacesResults(
@@ -130,7 +133,7 @@ class LoggingService : LifecycleService() {
         setupCamera() // Startet periodische Bildaufnahme
         startYamNetClassification()
         startVehicleClassification()
-        startPeriodicLogging()  // Logge alle 5 Sekunden (inkl. Speed)
+        startPeriodicLogging()  // Logge alle 5 Sekunden (inkl. Speed und Pegel)
     }
 
     override fun onDestroy() {
@@ -141,6 +144,9 @@ class LoggingService : LifecycleService() {
         cameraExecutor.shutdown()
         newModelInterpreter?.close()
         stopLocationUpdates()
+        stopActivityRecognition()
+        stopYamNet()
+        stopVehicleClassification()
     }
 
     override fun onBind(intent: Intent): IBinder? {
@@ -148,7 +154,7 @@ class LoggingService : LifecycleService() {
         return null
     }
 
-    // ---------------- NEU: Location Updates ----------------
+    // ---------------- Location Updates ----------------
     private fun startLocationUpdates() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
             != PackageManager.PERMISSION_GRANTED &&
@@ -209,7 +215,7 @@ class LoggingService : LifecycleService() {
         )
         val notification: Notification = NotificationCompat.Builder(this, channelId)
             .setContentTitle("Logging active")
-            .setContentText("Capturing images and processing labels every 15 sec")
+            .setContentText("Capturing images and processing data every 5 sec")
             .setSmallIcon(android.R.drawable.ic_menu_camera)
             .setContentIntent(pendingIntent)
             .build()
@@ -313,10 +319,11 @@ class LoggingService : LifecycleService() {
     }
 
     private fun captureImage() {
+        // Optionale kurze Verzögerung
         Thread.sleep(300)
         val photoFile = File(cacheDir, "photo_${System.currentTimeMillis()}.jpg")
         val outputOptions = ImageCapture.OutputFileOptions.Builder(photoFile).build()
-        imageCapture?.takePicture(
+        imageCapture.takePicture(
             outputOptions,
             cameraExecutor,
             object : ImageCapture.OnImageSavedCallback {
@@ -528,12 +535,6 @@ class LoggingService : LifecycleService() {
         return Pair(label, confidence)
     }
 
-    /**
-     * Konvertiert das Bitmap (bereits auf die Zielgröße skaliert) in einen ByteBuffer.
-     * Hier werden **keine** Normalisierungen durchgeführt – die rohen Pixelwerte (0–255) werden als Float
-     * direkt übergeben. Das ist korrekt, wenn das TFLite-Modell intern den Preprocessing-Schritt (z.B. via preprocess_input)
-     * durchführt.
-     */
     private fun convertBitmapToByteBuffer(bitmap: Bitmap): java.nio.ByteBuffer {
         val byteBuffer = java.nio.ByteBuffer.allocateDirect(4 * newModelInputSize * newModelInputSize * 3)
         byteBuffer.order(java.nio.ByteOrder.nativeOrder())
@@ -543,11 +544,9 @@ class LoggingService : LifecycleService() {
         for (i in 0 until newModelInputSize) {
             for (j in 0 until newModelInputSize) {
                 val pixelValue = intValues[pixel++]
-                // Hole die Farbwerte als Float im Bereich 0–255
                 val r = ((pixelValue shr 16) and 0xFF).toFloat()
                 val g = ((pixelValue shr 8) and 0xFF).toFloat()
                 val b = (pixelValue and 0xFF).toFloat()
-                // Schreibe die Rohwerte ohne Normalisierung in den ByteBuffer
                 byteBuffer.putFloat(r)
                 byteBuffer.putFloat(g)
                 byteBuffer.putFloat(b)
@@ -556,7 +555,7 @@ class LoggingService : LifecycleService() {
         return byteBuffer
     }
 
-    // ---------------- NEU: YamNet Audio-Klassifikation ----------------
+    // ---------------- NEU: YamNet Audio-Klassifikation mit Pegelmessung ----------------
     private fun startYamNetClassification() {
         try {
             val modelPath = "lite-model_yamnet_classification_tflite_1.tflite"
@@ -571,6 +570,10 @@ class LoggingService : LifecycleService() {
             yamNetJob = serviceScope.launch(Dispatchers.Default) {
                 while (isActive) {
                     tensor.load(audioRecord!!)
+                    // NEU: Über Reflection den internen FloatBuffer abrufen
+                    val floatBuffer = getTensorAudioBuffer(tensor)
+                    val level = computeAudioLevel(floatBuffer)
+                    viewModel.currentPegel.value = level
                     val outputs = audioClassifier!!.classify(tensor)
                     val filtered = outputs[0].categories.filter { c ->
                         allowedLabelIndices.contains(c.index)
@@ -590,6 +593,34 @@ class LoggingService : LifecycleService() {
         } catch (e: Exception) {
             Log.e("LoggingService", "Error starting YamNet classification: ${e.message}")
         }
+    }
+
+    // NEU: Mithilfe von Reflection den internen FloatBuffer aus dem TensorAudio abrufen
+    private fun getTensorAudioBuffer(tensor: TensorAudio): java.nio.FloatBuffer {
+        val ringBufferField = tensor.javaClass.getDeclaredField("buffer")
+        ringBufferField.isAccessible = true
+        val ringBuffer = ringBufferField.get(tensor)
+        val innerBufferField = ringBuffer.javaClass.getDeclaredField("buffer")
+        innerBufferField.isAccessible = true
+        val innerBuffer = innerBufferField.get(ringBuffer)
+        return if (innerBuffer is FloatArray) {
+            java.nio.FloatBuffer.wrap(innerBuffer)
+        } else {
+            innerBuffer as java.nio.FloatBuffer
+        }
+    }
+
+    // NEU: Helper-Funktion zur Berechnung des Audio-Pegels (in dB) aus einem FloatBuffer
+    private fun computeAudioLevel(buffer: java.nio.FloatBuffer): Float {
+        buffer.rewind()
+        val numFloats = buffer.remaining()
+        var sumSquares = 0.0
+        while (buffer.hasRemaining()) {
+            val sample = buffer.get()
+            sumSquares += sample * sample
+        }
+        val rms = sqrt(sumSquares / numFloats)
+        return if (rms > 0) (20 * log10(rms)).toFloat() else -160f
     }
 
     private fun stopYamNet() {
@@ -669,6 +700,7 @@ class LoggingService : LifecycleService() {
                 val veh = viewModel.currentVehicleTop1.value
                 val newModelOutput = viewModel.currentNewModelOutput.value
                 val speed = viewModel.currentSpeed.value  // in m/s
+                val pegel = viewModel.currentPegel.value
 
                 viewModel.appendLog(
                     timeStr = timeStr,
@@ -689,7 +721,8 @@ class LoggingService : LifecycleService() {
                     veh = veh,
                     newModelLabel = newModelOutput.first,
                     newModelConf = newModelOutput.second,
-                    speed = speed
+                    speed = speed,
+                    pegel = pegel
                 )
             }
         }

@@ -48,6 +48,8 @@ class MainViewModel : ViewModel() {
     // NEU: Aktuelle Geschwindigkeit in m/s (Geschwindigkeit von den GPS-Daten)
     val currentSpeed = mutableStateOf(0f)
 
+    // NEU: Aktueller Pegel (z.B. in dB)
+    val currentPegel = mutableStateOf(0f)
 
     // B) Logs und CSV-Handling
     val logList = mutableStateListOf<String>()
@@ -67,7 +69,7 @@ class MainViewModel : ViewModel() {
                             "PLACES_top3,places_top3_conf,PLACES_top4,places_top4_conf," +
                             "PLACES_top5,places_top5_conf,SCENE_TYPE,ACT,ACT_confidence," +
                             "YAMNET_top1,top1_conf,YAMNET_top2,top2_conf,YAMNET_top3,top3_conf," +
-                            "VEHICLE_label,vehicle_conf,NEW_MODEL_LABEL,NEW_MODEL_CONF,SPEED_m_s\n"
+                            "VEHICLE_label,vehicle_conf,NEW_MODEL_LABEL,NEW_MODEL_CONF,SPEED_m_s,PEGEL\n"
                 )
             }
         }
@@ -114,7 +116,7 @@ class MainViewModel : ViewModel() {
                     "PLACES_top3,places_top3_conf,PLACES_top4,places_top4_conf," +
                     "PLACES_top5,places_top5_conf,SCENE_TYPE,ACT,ACT_confidence," +
                     "YAMNET_top1,top1_conf,YAMNET_top2,top2_conf,YAMNET_top3,top3_conf," +
-                    "VEHICLE_label,vehicle_conf,NEW_MODEL_LABEL,NEW_MODEL_CONF,SPEED_m_s\n"
+                    "VEHICLE_label,vehicle_conf,NEW_MODEL_LABEL,NEW_MODEL_CONF,SPEED_m_s,PEGEL\n"
         )
 
         val featureFile = getFeatureCsvFile()
@@ -160,7 +162,8 @@ class MainViewModel : ViewModel() {
         veh: LabelConfidence?,
         newModelLabel: String,
         newModelConf: Float,
-        speed: Float
+        speed: Float,
+        pegel: Float
     ) {
         val line = buildString {
             append(csvEscape(timeStr)).append(",")
@@ -191,7 +194,8 @@ class MainViewModel : ViewModel() {
             append("%.2f".format(Locale.US, veh?.confidence ?: 0f)).append(",")
             append(csvEscape(newModelLabel)).append(",")
             append("%.2f".format(Locale.US, newModelConf)).append(",")
-            append("%.2f".format(Locale.US, speed))
+            append("%.2f".format(Locale.US, speed)).append(",")
+            append("%.2f".format(Locale.US, pegel))
         }
         logList.add(0, line)
         try {
