@@ -498,7 +498,7 @@ class LoggingService : LifecycleService() {
     // ---------------- NEU: Laden des neuen TFLite-Modells und der Labels ----------------
     private fun loadNewModel() {
         try {
-            val modelPath = assetFilePath("my_mobileNet_model.tflite")
+            val modelPath = assetFilePath("model.tflite")
             newModelInterpreter = Interpreter(File(modelPath))
             newModelLabels = loadLabels("new_model_labels.txt")
             Log.d("LoggingService", "New model loaded successfully.")

@@ -1,4 +1,5 @@
 bus
-subway
+msub
+osub
 train
 tram
