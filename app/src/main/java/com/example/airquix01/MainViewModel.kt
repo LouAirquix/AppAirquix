@@ -269,6 +269,8 @@ class MainViewModel : ViewModel() {
             append("%.2f".format(Locale.US, newModelConf2)).append(",")
             append(csvEscape(newModelLabel3)).append(",")
             append("%.2f".format(Locale.US, newModelConf3)).append(",")
+            // Hier werden nun die aggregierten Werte aus dem OneMinuteAggregator eingetragen
+            // (Diese Werte werden später aggregiert und in createFeatureVectorAndSave() ermittelt)
             append("%.2f".format(Locale.US, speed)).append(",")
             append("%.2f".format(Locale.US, pegel))
         }
@@ -282,7 +284,7 @@ class MainViewModel : ViewModel() {
             e.printStackTrace()
         }
 
-        // Übergabe an den Aggregator (s. unten)
+        // Übergabe an den Aggregator:
         aggregator.addData(
             timeStr = timeStr,
             placesTop1 = Pair(placesTop1, placesTop1Conf),
@@ -298,7 +300,10 @@ class MainViewModel : ViewModel() {
             },
             activity = act to actConf,
             yamTop3 = yamTop3,
-            vehicle = veh
+            vehicle = veh,
+            vehicleImage = currentNewModelOutput.value.first,
+            speed = speed,
+            noise = pegel
         )
     }
 
@@ -331,6 +336,10 @@ class MainViewModel : ViewModel() {
         private val activityBuffer = mutableListOf<Pair<String, Int>>()
         private val yamnetBuffer = mutableListOf<List<LabelConfidence>>()
         private val vehicleBuffer = mutableListOf<LabelConfidence?>()
+        // Neue Buffer für die zusätzlichen Variablen:
+        private val vehicleImageBuffer = mutableListOf<String>()
+        private val speedBuffer = mutableListOf<Float>()
+        private val noiseBuffer = mutableListOf<Float>()
 
         private var counter = 0
 
@@ -345,7 +354,10 @@ class MainViewModel : ViewModel() {
             ioValue: Float,
             activity: Pair<String, Int>,
             yamTop3: List<LabelConfidence>,
-            vehicle: LabelConfidence?
+            vehicle: LabelConfidence?,
+            vehicleImage: String,
+            speed: Float,
+            noise: Float
         ) {
             placesBuffer.add(PlacesData(placesTop1, placesTop2, placesTop3, placesTop4, placesTop5))
             sceneTypes.add(sceneType)
@@ -353,6 +365,11 @@ class MainViewModel : ViewModel() {
             activityBuffer.add(activity)
             yamnetBuffer.add(yamTop3)
             vehicleBuffer.add(vehicle)
+            // Zusätzliche Werte sammeln:
+            vehicleImageBuffer.add(vehicleImage)
+            speedBuffer.add(speed)
+            noiseBuffer.add(noise)
+
             counter++
             if (counter >= 12) { // 12 Intervalle à 5 Sekunden = 1 Minute
                 createFeatureVectorAndSave()
@@ -362,6 +379,9 @@ class MainViewModel : ViewModel() {
                 activityBuffer.clear()
                 yamnetBuffer.clear()
                 vehicleBuffer.clear()
+                vehicleImageBuffer.clear()
+                speedBuffer.clear()
+                noiseBuffer.clear()
                 counter = 0
             }
         }
@@ -486,11 +506,24 @@ class MainViewModel : ViewModel() {
                 "None"
             }
 
-            // NEU: Neue Spalten für Vehicle Image, Speed und Noise
-            // Hier nehmen wir an, dass Vehicle Image aus currentNewModelOutput stammt.
-            val vehicleImage = currentNewModelOutput.value.first
-            val speedVal = currentSpeed.value
-            val noiseVal = currentPegel.value
+            // Aggregation der zusätzlichen Variablen:
+            val aggregatedSpeed = if (speedBuffer.isNotEmpty()) speedBuffer.sum() / speedBuffer.size else 0f
+            val aggregatedNoise = if (noiseBuffer.isNotEmpty()) noiseBuffer.sum() / noiseBuffer.size else 0f
+
+            val aggregatedVehicleImage = if (finalActLabel.equals("vehicle", ignoreCase = true)) {
+                if (vehicleImageBuffer.isNotEmpty()) {
+                    val imageCountMap = mutableMapOf<String, Int>()
+                    for (image in vehicleImageBuffer) {
+                        imageCountMap[image] = imageCountMap.getOrDefault(image, 0) + 1
+                    }
+                    imageCountMap.maxByOrNull { it.value }?.key ?: "None"
+                } else {
+                    "None"
+                }
+            } else {
+                "None"
+            }
+
 
             // Erstelle die CSV-Zeile für feature_vectors.csv
             val csvLine = buildString {
@@ -519,10 +552,10 @@ class MainViewModel : ViewModel() {
                 append(csvEscape(singleTop2.first)).append(",")
                 append("%.2f".format(Locale.US, singleTop2.second)).append(",")
                 append(csvEscape(vehicleAggLabel)).append(",")
-                // Neue Spalten:
-                append(csvEscape(vehicleImage)).append(",")
-                append("%.2f".format(Locale.US, speedVal)).append(",")
-                append("%.2f".format(Locale.US, noiseVal))
+                // Hier werden nun die aggregierten Werte eingetragen:
+                append(csvEscape(aggregatedVehicleImage)).append(",")
+                append("%.2f".format(Locale.US, aggregatedSpeed)).append(",")
+                append("%.2f".format(Locale.US, aggregatedNoise))
             }
 
             try {
