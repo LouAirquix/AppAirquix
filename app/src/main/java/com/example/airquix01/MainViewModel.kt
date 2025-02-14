@@ -77,8 +77,11 @@ class MainViewModel : ViewModel() {
                     "timestamp,PLACES_top1,places_top1_conf,PLACES_top2,places_top2_conf," +
                             "PLACES_top3,places_top3_conf,PLACES_top4,places_top4_conf," +
                             "PLACES_top5,places_top5_conf,SCENE_TYPE,ACT,ACT_confidence," +
-                            "YAMNET_top1,top1_conf,YAMNET_top2,top2_conf,YAMNET_top3,top3_conf," +
-                            "VEHICLE_label,vehicle_conf\n"
+                            "YAMNET_top1,YAMNET_conf_1,YAMNET_top2,YAMNET_conf_2,YAMNET_top3,YAMNET_conf_3," +
+                            "VEHICLE_audio_1,vehicle_audio_conf_1,VEHICLE_audio_2,vehicle_audio_conf_2," +
+                            "VEHICLE_audio_3,vehicle_audio_conf_3,VEHICLE_image_1,vehicle_image_conf_1," +
+                            "VEHICLE_image_2,vehicle_image_conf_2,VEHICLE_image_3,vehicle_image_conf_3," +
+                            "speed_m_s,noise_dB\n"
                 )
             }
         }
@@ -124,8 +127,11 @@ class MainViewModel : ViewModel() {
             "timestamp,PLACES_top1,places_top1_conf,PLACES_top2,places_top2_conf," +
                     "PLACES_top3,places_top3_conf,PLACES_top4,places_top4_conf," +
                     "PLACES_top5,places_top5_conf,SCENE_TYPE,ACT,ACT_confidence," +
-                    "YAMNET_top1,top1_conf,YAMNET_top2,top2_conf,YAMNET_top3,top3_conf," +
-                    "VEHICLE_label,vehicle_conf\n"
+                    "YAMNET_top1,YAMNET_conf_1,YAMNET_top2,YAMNET_conf_2,YAMNET_top3,YAMNET_conf_3," +
+                    "VEHICLE_audio_1,vehicle_audio_conf_1,VEHICLE_audio_2,vehicle_audio_conf_2," +
+                    "VEHICLE_audio_3,vehicle_audio_conf_3,VEHICLE_image_1,vehicle_image_conf_1," +
+                    "VEHICLE_image_2,vehicle_image_conf_2,VEHICLE_image_3,vehicle_image_conf_3," +
+                    "speed_m_s,noise_dB\n"
         )
 
         val featureFile = getFeatureCsvFile()
