@@ -551,11 +551,18 @@ class LoggingService : LifecycleService() {
         return topPredictions
     }
 
+    /**
+     * Korrigierte Funktion zur Umwandlung eines Bitmaps in einen ByteBuffer.
+     * Das Bitmap wird exakt auf 160x160 Pixel skaliert, und die RGB-Werte
+     * (als Float im Bereich [0,255]) werden in den Puffer geschrieben.
+     * Wichtig: Am Ende wird der Puffer mit rewind() zurückgesetzt.
+     */
     private fun convertBitmapToByteBuffer(bitmap: Bitmap): java.nio.ByteBuffer {
+        val scaledBitmap = Bitmap.createScaledBitmap(bitmap, newModelInputSize, newModelInputSize, true)
         val byteBuffer = java.nio.ByteBuffer.allocateDirect(4 * newModelInputSize * newModelInputSize * 3)
         byteBuffer.order(java.nio.ByteOrder.nativeOrder())
         val intValues = IntArray(newModelInputSize * newModelInputSize)
-        bitmap.getPixels(intValues, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+        scaledBitmap.getPixels(intValues, 0, scaledBitmap.width, 0, 0, scaledBitmap.width, scaledBitmap.height)
         var pixel = 0
         for (i in 0 until newModelInputSize) {
             for (j in 0 until newModelInputSize) {
@@ -568,6 +575,7 @@ class LoggingService : LifecycleService() {
                 byteBuffer.putFloat(b)
             }
         }
+        byteBuffer.rewind()
         return byteBuffer
     }
 
