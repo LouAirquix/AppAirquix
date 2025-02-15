@@ -126,8 +126,8 @@ class MainActivity : ComponentActivity() {
                         onStopLogging = { stopLoggingService() },
                         onClearLogs = { viewModel.clearAllLogs() },
                         onShareLogs = { shareLogsCsv() },
-                        onShareFeatureCsv = { shareFeatureCsv() },
-                        onShowStatusDialog = { showStatusDialog = true } // neuer Button-Callback
+                        // Der Callback onShareFeatureCsv wurde entfernt.
+                        onShowStatusDialog = { showStatusDialog = true }
                     )
 
                     if (showReadMe) {
@@ -158,8 +158,7 @@ class MainActivity : ComponentActivity() {
         onStopLogging: () -> Unit,
         onClearLogs: () -> Unit,
         onShareLogs: () -> Unit,
-        onShareFeatureCsv: () -> Unit,
-        onShowStatusDialog: () -> Unit  // neuer Callback
+        onShowStatusDialog: () -> Unit
     ) {
         Column(
             modifier = modifier
@@ -202,12 +201,7 @@ class MainActivity : ComponentActivity() {
                 ) {
                     Text("Share CSV Logs")
                 }
-                ElevatedButton(
-                    onClick = onShareFeatureCsv,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text("Share Feature")
-                }
+                // Der Button "Share Feature" wurde entfernt.
             }
             Spacer(Modifier.height(16.dp))
             // Neuer Button für Status-Auswahl
@@ -246,7 +240,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // Neuer Dialog zur Auswahl des Status
     @Composable
     fun StatusSelectionDialog(
         onDismiss: () -> Unit,
@@ -288,10 +281,8 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     fun LogItem(logLine: String) {
-        // Um das Formatierungsproblem zu beheben, berücksichtigen wir hier nur die ersten 26 Spalten.
         val parts = remember(logLine) { parseCsvLine(logLine) }
         val trimmedParts = if (parts.size > 26) parts.take(26) else parts
-
 
         val timestamp = trimmedParts.getOrNull(0) ?: ""
         val placesTop1 = trimmedParts.getOrNull(1) ?: ""
@@ -320,7 +311,6 @@ class MainActivity : ComponentActivity() {
         val speedVal = trimmedParts.getOrNull(24) ?: ""
         val pegel = trimmedParts.getOrNull(25) ?: ""
 
-
         Card(
             modifier = Modifier
                 .fillMaxWidth()
@@ -342,7 +332,7 @@ class MainActivity : ComponentActivity() {
                 Text("YAMNET Top-2: $yamTop2 (conf: $yamTop2Conf)")
                 Text("YAMNET Top-3: $yamTop3 (conf: $yamTop3Conf)")
                 Text("Vehicle Audio: $vehLabel (conf: $vehConf)")
-                Text("Vehicle Image: $newModelLabel (conf: $newModelConf)")
+                Text("New Model: $newModelLabel (conf: $newModelConf)")
                 Text("Speed (m/s): $speedVal")
                 Text("Noise (dB): $pegel")
             }
@@ -446,25 +436,5 @@ class MainActivity : ComponentActivity() {
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
         startActivity(Intent.createChooser(intent, "Share CSV Logs"))
-    }
-
-    private fun shareFeatureCsv() {
-        val vm = (applicationContext as AirquixApplication).getMainViewModel()
-        val csvFile = vm.getFeatureCsvFile()
-        if (!csvFile.exists()) {
-            Toast.makeText(this, "No Feature CSV to share.", Toast.LENGTH_SHORT).show()
-            return
-        }
-        val uri = androidx.core.content.FileProvider.getUriForFile(
-            this,
-            packageName + ".provider",
-            csvFile
-        )
-        val intent = Intent(Intent.ACTION_SEND).apply {
-            type = "text/csv"
-            putExtra(Intent.EXTRA_STREAM, uri)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }
-        startActivity(Intent.createChooser(intent, "Share Feature CSV"))
     }
 }
