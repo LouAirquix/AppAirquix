@@ -31,7 +31,7 @@ import com.example.airquix01.ui.theme.MymlkitappTheme
 
 class MainActivity : ComponentActivity() {
 
-    // Launcher zum Anfordern mehrerer Berechtigungen (inklusive Standort)
+    // Launcher für Berechtigungen
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
@@ -43,10 +43,8 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // Prüfe und fordere alle nötigen Berechtigungen an (inklusive Standort)
     private fun checkAndRequestPermissions() {
         val needed = mutableListOf<String>()
-
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
             != PackageManager.PERMISSION_GRANTED
         ) {
@@ -104,6 +102,7 @@ class MainActivity : ComponentActivity() {
                 val viewModel = app.getMainViewModel()
 
                 var showReadMe by remember { mutableStateOf(false) }
+                var showStatusDialog by remember { mutableStateOf(false) }  // für Status-Auswahl
 
                 Scaffold(
                     topBar = {
@@ -127,13 +126,23 @@ class MainActivity : ComponentActivity() {
                         onStopLogging = { stopLoggingService() },
                         onClearLogs = { viewModel.clearAllLogs() },
                         onShareLogs = { shareLogsCsv() },
-                        onShareFeatureCsv = { shareFeatureCsv() }
+                        onShareFeatureCsv = { shareFeatureCsv() },
+                        onShowStatusDialog = { showStatusDialog = true } // neuer Button-Callback
                     )
 
                     if (showReadMe) {
                         ReadMeDialog(
                             onDismiss = { showReadMe = false },
                             context = context
+                        )
+                    }
+                    if (showStatusDialog) {
+                        StatusSelectionDialog(
+                            onDismiss = { showStatusDialog = false },
+                            onStatusSelected = { selectedStatus ->
+                                viewModel.currentStatusGt.value = selectedStatus
+                                showStatusDialog = false
+                            }
                         )
                     }
                 }
@@ -149,7 +158,8 @@ class MainActivity : ComponentActivity() {
         onStopLogging: () -> Unit,
         onClearLogs: () -> Unit,
         onShareLogs: () -> Unit,
-        onShareFeatureCsv: () -> Unit
+        onShareFeatureCsv: () -> Unit,
+        onShowStatusDialog: () -> Unit  // neuer Callback
     ) {
         Column(
             modifier = modifier
@@ -175,9 +185,7 @@ class MainActivity : ComponentActivity() {
                     Text("Stop")
                 }
             }
-
             Spacer(Modifier.height(16.dp))
-
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -201,9 +209,15 @@ class MainActivity : ComponentActivity() {
                     Text("Share Feature")
                 }
             }
-
+            Spacer(Modifier.height(16.dp))
+            // Neuer Button für Status-Auswahl
+            ElevatedButton(
+                onClick = onShowStatusDialog,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Set Status (status_gt)")
+            }
             Spacer(Modifier.height(24.dp))
-
             Text(
                 text = "Current Speed: ${viewModel.currentSpeed.value} m/s",
                 style = MaterialTheme.typography.bodyMedium
@@ -212,11 +226,13 @@ class MainActivity : ComponentActivity() {
                 text = "Current Noise: ${"%.2f".format(viewModel.currentPegel.value)} dB",
                 style = MaterialTheme.typography.bodyMedium
             )
-
+            Text(
+                text = "Current Status: ${viewModel.currentStatusGt.value}",
+                style = MaterialTheme.typography.bodyMedium
+            )
             Spacer(Modifier.height(16.dp))
             Text("Logs:", style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(8.dp))
-
             val logList = viewModel.logList
             if (logList.isEmpty()) {
                 Text("No logs yet.")
@@ -230,35 +246,44 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // Hilfsfunktion zum Parsen einer CSV-Zeile
-    private fun parseCsvLine(line: String): List<String> {
-        val result = mutableListOf<String>()
-        var current = StringBuilder()
-        var insideQuotes = false
-        var i = 0
-        while (i < line.length) {
-            val c = line[i]
-            when {
-                c == '"' -> {
-                    if (insideQuotes && i + 1 < line.length && line[i + 1] == '"') {
-                        current.append('"')
-                        i++
-                    } else {
-                        insideQuotes = !insideQuotes
+    // Neuer Dialog zur Auswahl des Status
+    @Composable
+    fun StatusSelectionDialog(
+        onDismiss: () -> Unit,
+        onStatusSelected: (String) -> Unit
+    ) {
+        val statusOptions = listOf(
+            "Vehicle in Tram",
+            "Vehicle in Car",
+            "Vehicle in Bus",
+            "Vehicle in Subway",
+            "Outdoor by Bike",
+            "Outdoor on Foot",
+            "Indoor with window open",
+            "Indoor with window closed",
+            "Indoor in Supermarket",
+            "Indoor in Gymnastics",
+            "Indoor in Subway-Station",
+            "Outdoor in Nature",
+            "Vehicle in E-Bus",
+            "Vehicle in Sbahn",
+            "Outdoor running",
+            "Vehicle in old Subway"
+        )
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            title = { Text("Select Status (status_gt)") },
+            text = {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    statusOptions.forEach { status ->
+                        TextButton(onClick = { onStatusSelected(status) }) {
+                            Text(status)
+                        }
                     }
                 }
-                c == ',' && !insideQuotes -> {
-                    result.add(current.toString())
-                    current = StringBuilder()
-                }
-                else -> {
-                    current.append(c)
-                }
-            }
-            i++
-        }
-        result.add(current.toString())
-        return result
+            },
+            confirmButton = {}
+        )
     }
 
     @Composable
@@ -266,6 +291,7 @@ class MainActivity : ComponentActivity() {
         // Um das Formatierungsproblem zu beheben, berücksichtigen wir hier nur die ersten 26 Spalten.
         val parts = remember(logLine) { parseCsvLine(logLine) }
         val trimmedParts = if (parts.size > 26) parts.take(26) else parts
+
 
         val timestamp = trimmedParts.getOrNull(0) ?: ""
         val placesTop1 = trimmedParts.getOrNull(1) ?: ""
@@ -294,6 +320,7 @@ class MainActivity : ComponentActivity() {
         val speedVal = trimmedParts.getOrNull(24) ?: ""
         val pegel = trimmedParts.getOrNull(25) ?: ""
 
+
         Card(
             modifier = Modifier
                 .fillMaxWidth()
@@ -320,6 +347,36 @@ class MainActivity : ComponentActivity() {
                 Text("Noise (dB): $pegel")
             }
         }
+    }
+
+    private fun parseCsvLine(line: String): List<String> {
+        val result = mutableListOf<String>()
+        var current = StringBuilder()
+        var insideQuotes = false
+        var i = 0
+        while (i < line.length) {
+            val c = line[i]
+            when {
+                c == '"' -> {
+                    if (insideQuotes && i + 1 < line.length && line[i + 1] == '"') {
+                        current.append('"')
+                        i++
+                    } else {
+                        insideQuotes = !insideQuotes
+                    }
+                }
+                c == ',' && !insideQuotes -> {
+                    result.add(current.toString())
+                    current = StringBuilder()
+                }
+                else -> {
+                    current.append(c)
+                }
+            }
+            i++
+        }
+        result.add(current.toString())
+        return result
     }
 
     @Composable

@@ -30,7 +30,7 @@ class MainViewModel : ViewModel() {
     val currentPlacesTop5 = mutableStateOf("Unknown")
     val currentPlacesTop5Confidence = mutableStateOf(0f)
 
-    // Scene Type (z. B. "indoor" oder "outdoor")
+    // Scene Type (z. B. "indoor" oder "outdoor")
     val currentSceneType = mutableStateOf("Unknown")
 
     // Aktivität
@@ -57,6 +57,9 @@ class MainViewModel : ViewModel() {
     // NEU: Aktueller Pegel (z. B. in dB)
     val currentPegel = mutableStateOf(0f)
 
+    // NEU: Neuer State für den manuell ausgewählten Status (wird im CSV-Log berücksichtigt)
+    val currentStatusGt = mutableStateOf("Unknown")
+
     // -------------------------------------------
     // B) Logs und CSV-Handling
     // -------------------------------------------
@@ -72,11 +75,11 @@ class MainViewModel : ViewModel() {
             val dir = AirquixApplication.appContext.getExternalFilesDir(null)
             logsCsvFile = File(dir, logsCsvFileName)
             if (!logsCsvFile!!.exists()) {
-                // Header für Logs (unverändert, 29 Spalten)
+                // Header für Logs (29 Spalten – wie in der ursprünglichen Version)
                 logsCsvFile!!.writeText(
                     "timestamp,PLACES_top1,places_top1_conf,PLACES_top2,places_top2_conf," +
                             "PLACES_top3,places_top3_conf,PLACES_top4,places_top4_conf," +
-                            "PLACES_top5,places_top5_conf,SCENE_TYPE,ACT,ACT_confidence," +
+                            "PLACES_top5,places_top5_conf,SCENE_TYPE,ACT,ACT_confidence,status_gt," +
                             "YAMNET_top1,YAMNET_conf_1,YAMNET_top2,YAMNET_conf_2,YAMNET_top3,YAMNET_conf_3," +
                             "VEHICLE_audio_1,vehicle_audio_conf_1,VEHICLE_audio_2,vehicle_audio_conf_2," +
                             "VEHICLE_audio_3,vehicle_audio_conf_3,VEHICLE_image_1,vehicle_image_conf_1," +
@@ -93,7 +96,7 @@ class MainViewModel : ViewModel() {
             val dir = AirquixApplication.appContext.getExternalFilesDir(null)
             featureCsvFile = File(dir, featureCsvFileName)
             if (!featureCsvFile!!.exists()) {
-                // Neuer Header: bisherige 29 Spalten + 3 neue: vehicle_image, speed_m_s, noise_dB
+                // Neuer Header für die Feature CSV (zusätzliche Spalten: vehicle_image, speed_m_s, noise_dB)
                 featureCsvFile!!.writeText(
                     "timestamp," +
                             "places_top1,places_top1_conf," +
@@ -126,7 +129,7 @@ class MainViewModel : ViewModel() {
         logsFile.writeText(
             "timestamp,PLACES_top1,places_top1_conf,PLACES_top2,places_top2_conf," +
                     "PLACES_top3,places_top3_conf,PLACES_top4,places_top4_conf," +
-                    "PLACES_top5,places_top5_conf,SCENE_TYPE,ACT,ACT_confidence," +
+                    "PLACES_top5,places_top5_conf,SCENE_TYPE,ACT,ACT_confidence,status_gt," +
                     "YAMNET_top1,YAMNET_conf_1,YAMNET_top2,YAMNET_conf_2,YAMNET_top3,YAMNET_conf_3," +
                     "VEHICLE_audio_1,vehicle_audio_conf_1,VEHICLE_audio_2,vehicle_audio_conf_2," +
                     "VEHICLE_audio_3,vehicle_audio_conf_3,VEHICLE_image_1,vehicle_image_conf_1," +
@@ -159,11 +162,10 @@ class MainViewModel : ViewModel() {
     }
 
     /**
-     * Diese Methode erstellt zwei Strings:
-     * - displayLine: nur die ursprünglichen 26 Spalten (wie bisher, für die UI)
-     * - csvLine: der vollständige, erweiterte Log (32 Spalten) – inklusive der neuen Spalten
-     *
-     * In der UI wird displayLine verwendet, während csvLine in die Feature CSV geschrieben wird.
+     * Erzeugt zwei Strings:
+     * - displayLine: Diese Zeile (26 Spalten) wird in der UI angezeigt – unverändert wie zuvor.
+     * - csvLine: Der vollständige Log-Eintrag (32 Spalten) enthält zusätzlich das neue Feld status_gt
+     *   sowie die Fahrzeugbild-Daten.
      */
     fun appendLog(
         timeStr: String,
@@ -184,22 +186,10 @@ class MainViewModel : ViewModel() {
         veh: LabelConfidence?,
         newModelTop: Pair<String, Float>,
         speed: Float,
-        pegel: Float
+        pegel: Float,
+        status_gt: String  // Neuer Parameter
     ) {
-        // Erweiterte Daten (für CSV)
-        val newModelResults = currentNewModelMultiResults.value
-        val newModelLabel2 = if (newModelResults.size > 1) newModelResults[1].label else "none"
-        val newModelConf2 = if (newModelResults.size > 1) newModelResults[1].confidence else 0f
-        val newModelLabel3 = if (newModelResults.size > 2) newModelResults[2].label else "none"
-        val newModelConf3 = if (newModelResults.size > 2) newModelResults[2].confidence else 0f
-
-        val vehicleResults = currentVehicleMultiResults.value
-        val vehLabel2 = if (vehicleResults.size > 1) vehicleResults[1].label else "none"
-        val vehConf2 = if (vehicleResults.size > 1) vehicleResults[1].confidence else 0f
-        val vehLabel3 = if (vehicleResults.size > 2) vehicleResults[2].label else "none"
-        val vehConf3 = if (vehicleResults.size > 2) vehicleResults[2].confidence else 0f
-
-        // displayLine – nur die ursprünglich verwendeten 26 Spalten:
+        // displayLine – Nur die ursprünglich verwendeten 26 Spalten (ohne status_gt und Fahrzeugbild-Daten)
         val displayLine = buildString {
             append(csvEscape(timeStr)).append(",")
             append(csvEscape(placesTop1)).append(",")
@@ -215,7 +205,7 @@ class MainViewModel : ViewModel() {
             append(csvEscape(sceneType)).append(",")
             append(csvEscape(act)).append(",")
             append(actConf).append(",")
-            // YamNet Top-3
+            // YamNet Top-3 (6 Spalten)
             val top1 = yamTop3.getOrNull(0)
             val top2 = yamTop3.getOrNull(1)
             val top3 = yamTop3.getOrNull(2)
@@ -225,17 +215,18 @@ class MainViewModel : ViewModel() {
             append("%.2f".format(Locale.US, top2?.confidence ?: 0f)).append(",")
             append(csvEscape(top3?.label ?: "none")).append(",")
             append("%.2f".format(Locale.US, top3?.confidence ?: 0f)).append(",")
-            // Vehicle: nur Top1
+            // Vehicle Audio: Nur Top1 (2 Spalten)
             append(csvEscape(veh?.label ?: "none")).append(",")
             append("%.2f".format(Locale.US, veh?.confidence ?: 0f)).append(",")
-            // New Model: nur Top1
+            // New Model: Nur Top1 (2 Spalten)
             append(csvEscape(newModelTop.first)).append(",")
             append("%.2f".format(Locale.US, newModelTop.second)).append(",")
+            // Speed und Noise (je 1 Spalte)
             append("%.2f".format(Locale.US, speed)).append(",")
             append("%.2f".format(Locale.US, pegel))
         }
 
-        // csvLine – alle 32 Spalten (erweiterter Log)
+        // csvLine – Alle 32 Spalten (erweiterter Log)
         val csvLine = buildString {
             append(csvEscape(timeStr)).append(",")
             append(csvEscape(placesTop1)).append(",")
@@ -251,7 +242,9 @@ class MainViewModel : ViewModel() {
             append(csvEscape(sceneType)).append(",")
             append(csvEscape(act)).append(",")
             append(actConf).append(",")
-            // YamNet Top-3
+            // Neuer Eintrag für den Status:
+            append(csvEscape(status_gt)).append(",")
+            // YamNet Top-3 (6 Spalten)
             val top1 = yamTop3.getOrNull(0)
             val top2 = yamTop3.getOrNull(1)
             val top3 = yamTop3.getOrNull(2)
@@ -261,26 +254,37 @@ class MainViewModel : ViewModel() {
             append("%.2f".format(Locale.US, top2?.confidence ?: 0f)).append(",")
             append(csvEscape(top3?.label ?: "none")).append(",")
             append("%.2f".format(Locale.US, top3?.confidence ?: 0f)).append(",")
-            // Vehicle: Top1 und zusätzlich zwei weitere
+            // Vehicle Audio: Top1 und zusätzlich zwei weitere (insgesamt 6 Spalten)
+            val vehLabel2 = if (currentVehicleMultiResults.value.size > 1)
+                currentVehicleMultiResults.value[1].label else "none"
+            val vehConf2 = if (currentVehicleMultiResults.value.size > 1)
+                currentVehicleMultiResults.value[1].confidence else 0f
+            val vehLabel3 = if (currentVehicleMultiResults.value.size > 2)
+                currentVehicleMultiResults.value[2].label else "none"
+            val vehConf3 = if (currentVehicleMultiResults.value.size > 2)
+                currentVehicleMultiResults.value[2].confidence else 0f
             append(csvEscape(veh?.label ?: "none")).append(",")
             append("%.2f".format(Locale.US, veh?.confidence ?: 0f)).append(",")
             append(csvEscape(vehLabel2)).append(",")
             append("%.2f".format(Locale.US, vehConf2)).append(",")
             append(csvEscape(vehLabel3)).append(",")
             append("%.2f".format(Locale.US, vehConf3)).append(",")
-            // New Model: Top1 und zusätzlich zwei weitere
+            // New Model: Top1 und zusätzlich zwei weitere (insgesamt 6 Spalten)
+            val new2 = if (currentNewModelMultiResults.value.size > 1)
+                currentNewModelMultiResults.value[1] else LabelConfidence("none", 0f)
+            val new3 = if (currentNewModelMultiResults.value.size > 2)
+                currentNewModelMultiResults.value[2] else LabelConfidence("none", 0f)
             append(csvEscape(newModelTop.first)).append(",")
             append("%.2f".format(Locale.US, newModelTop.second)).append(",")
-            append(csvEscape(newModelLabel2)).append(",")
-            append("%.2f".format(Locale.US, newModelConf2)).append(",")
-            append(csvEscape(newModelLabel3)).append(",")
-            append("%.2f".format(Locale.US, newModelConf3)).append(",")
-            // Hier werden nun die aggregierten Werte aus dem OneMinuteAggregator eingetragen
-            // (Diese Werte werden später aggregiert und in createFeatureVectorAndSave() ermittelt)
+            append(csvEscape(new2.label)).append(",")
+            append("%.2f".format(Locale.US, new2.confidence)).append(",")
+            append(csvEscape(new3.label)).append(",")
+            append("%.2f".format(Locale.US, new3.confidence)).append(",")
+            // Speed und Noise (2 Spalten)
             append("%.2f".format(Locale.US, speed)).append(",")
             append("%.2f".format(Locale.US, pegel))
         }
-        // Nur displayLine wird in der UI angezeigt
+        // Nur displayLine wird in der UI angezeigt (unverändert wie in der ursprünglichen Version)
         logList.add(0, displayLine)
         try {
             FileWriter(getLogsCsvFile(), true).use { writer ->
@@ -290,7 +294,7 @@ class MainViewModel : ViewModel() {
             e.printStackTrace()
         }
 
-        // Übergabe an den Aggregator:
+        // Übergabe an den Aggregator (status_gt wird hier nicht aggregiert)
         aggregator.addData(
             timeStr = timeStr,
             placesTop1 = Pair(placesTop1, placesTop1Conf),
@@ -345,7 +349,7 @@ class MainViewModel : ViewModel() {
         // Neue Buffer für die zusätzlichen Variablen:
         private val vehicleImageBuffer = mutableListOf<String>()
         private val speedBuffer = mutableListOf<Float>()
-        private val noiseBuffer = mutableListOf<Float>()
+        private val noiseBuffer = mutableStateListOf<Float>()
 
         private var counter = 0
 
@@ -530,7 +534,6 @@ class MainViewModel : ViewModel() {
                 "None"
             }
 
-
             // Erstelle die CSV-Zeile für feature_vectors.csv
             val csvLine = buildString {
                 append(csvEscape(timestamp)).append(",")
@@ -543,22 +546,6 @@ class MainViewModel : ViewModel() {
                 append(csvEscape(sceneIO)).append(",")
                 append(csvEscape(finalActLabel)).append(",")
                 append("%.2f".format(Locale.US, finalActConf)).append(",")
-                append(csvEscape(freqTop1.first)).append(",")
-                append("%.2f".format(Locale.US, freqTop1.second)).append(",")
-                append(csvEscape(freqTop2.first)).append(",")
-                append("%.2f".format(Locale.US, freqTop2.second)).append(",")
-                append(csvEscape(freqTop3p.first)).append(",")
-                append("%.2f".format(Locale.US, freqTop3p.second)).append(",")
-                append(csvEscape(globTop1.first)).append(",")
-                append("%.2f".format(Locale.US, globTop1.second)).append(",")
-                append(csvEscape(globTop2.first)).append(",")
-                append("%.2f".format(Locale.US, globTop2.second)).append(",")
-                append(csvEscape(singleTop1.first)).append(",")
-                append("%.2f".format(Locale.US, singleTop1.second)).append(",")
-                append(csvEscape(singleTop2.first)).append(",")
-                append("%.2f".format(Locale.US, singleTop2.second)).append(",")
-                append(csvEscape(vehicleAggLabel)).append(",")
-                // Hier werden nun die aggregierten Werte eingetragen:
                 append(csvEscape(aggregatedVehicleImage)).append(",")
                 append("%.2f".format(Locale.US, aggregatedSpeed)).append(",")
                 append("%.2f".format(Locale.US, aggregatedNoise))

@@ -133,7 +133,7 @@ class LoggingService : LifecycleService() {
         setupCamera() // Startet periodische Bildaufnahme
         startYamNetClassification()
         startVehicleClassification()
-        startPeriodicLogging()  // Logge alle 5 Sekunden (inkl. Speed und Pegel)
+        startPeriodicLogging()  // Logge alle 5 Sekunden (inkl. Speed, Pegel, status_gt)
     }
 
     override fun onDestroy() {
@@ -378,10 +378,8 @@ class LoggingService : LifecycleService() {
         }
         // NEU: Klassifikation mit dem neuen TFLite-Modell
         if (bitmap != null && newModelInterpreter != null && ::newModelLabels.isInitialized) {
-            // Bestehende Top-1-Berechnung
             val (newLabel, newConfidence) = classifyNewModel(bitmap)
             viewModel.currentNewModelOutput.value = Pair(newLabel, newConfidence)
-            // NEU: Berechne zusätzlich Top-3 Ergebnisse (jetzt vom richtigen Typ)
             val multiResults = classifyNewModelMulti(bitmap)
             viewModel.currentNewModelMultiResults.value = multiResults
         }
@@ -546,7 +544,6 @@ class LoggingService : LifecycleService() {
         val output = Array(1) { FloatArray(newModelLabels.size) }
         newModelInterpreter?.run(inputBuffer, output)
         val probabilities = softmax(output[0])
-        // Sortiere die Indizes nach absteigender Wahrscheinlichkeit und nimm die Top-3
         val sortedIndices = probabilities.indices.sortedByDescending { probabilities[it] }
         val topPredictions = sortedIndices.take(3).map { index ->
             MainViewModel.LabelConfidence(newModelLabels[index], probabilities[index])
@@ -589,7 +586,6 @@ class LoggingService : LifecycleService() {
             yamNetJob = serviceScope.launch(Dispatchers.Default) {
                 while (isActive) {
                     tensor.load(audioRecord!!)
-                    // NEU: Über Reflection den internen FloatBuffer abrufen
                     val floatBuffer = getTensorAudioBuffer(tensor)
                     val level = computeAudioLevel(floatBuffer)
                     viewModel.currentPegel.value = level
@@ -611,7 +607,6 @@ class LoggingService : LifecycleService() {
         }
     }
 
-    // NEU: Mithilfe von Reflection den internen FloatBuffer aus dem TensorAudio abrufen
     private fun getTensorAudioBuffer(tensor: TensorAudio): java.nio.FloatBuffer {
         val ringBufferField = tensor.javaClass.getDeclaredField("buffer")
         ringBufferField.isAccessible = true
@@ -626,7 +621,6 @@ class LoggingService : LifecycleService() {
         }
     }
 
-    // NEU: Helper-Funktion zur Berechnung des Audio-Pegels (in dB) aus einem FloatBuffer
     private fun computeAudioLevel(buffer: java.nio.FloatBuffer): Float {
         buffer.rewind()
         val numFloats = buffer.remaining()
@@ -669,7 +663,6 @@ class LoggingService : LifecycleService() {
                     if (sortedCategories.isNotEmpty()) {
                         val top1 = sortedCategories[0]
                         viewModel.currentVehicleTop1.value = MainViewModel.LabelConfidence(top1.label, top1.score)
-                        // NEU: Speichere zusätzlich Top-3 Ergebnisse
                         val topVehicleResults = sortedCategories.take(3).map { MainViewModel.LabelConfidence(it.label, it.score) }
                         viewModel.currentVehicleMultiResults.value = topVehicleResults
                     } else {
@@ -719,8 +712,10 @@ class LoggingService : LifecycleService() {
                 val yamTop3 = viewModel.currentYamnetTop3.value
                 val veh = viewModel.currentVehicleTop1.value
                 val newModelOutput = viewModel.currentNewModelOutput.value
-                val speed = viewModel.currentSpeed.value  // in m/s
+                val speed = viewModel.currentSpeed.value
                 val pegel = viewModel.currentPegel.value
+                // NEU: Manuell gesetzter Status-Wert
+                val status_gt = viewModel.currentStatusGt.value
 
                 viewModel.appendLog(
                     timeStr = timeStr,
@@ -741,7 +736,8 @@ class LoggingService : LifecycleService() {
                     veh = veh,
                     newModelTop = newModelOutput,
                     speed = speed,
-                    pegel = pegel
+                    pegel = pegel,
+                    status_gt = status_gt
                 )
             }
         }
