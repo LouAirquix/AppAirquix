@@ -257,22 +257,22 @@ class MainActivity : ComponentActivity() {
             "Vehicle in Car",
             "Vehicle in Bus",
             "Vehicle in Subway",
+            "Vehicle in E-Bus",
+            "Vehicle in S-Bahn",
+            "Vehicle in Subway (old)",
             "Outdoor by Bike",
             "Outdoor on Foot",
+            "Outdoor in Nature",
+            "Outdoor running",
             "Indoor with window open",
             "Indoor with window closed",
             "Indoor in Supermarket",
-            "Indoor in Gymnastics",
+            "Indoor in Large-Room",
             "Indoor in Subway-Station",
-            "Outdoor in Nature",
-            "Vehicle in E-Bus",
-            "Vehicle in Sbahn",
-            "Outdoor running",
-            "Vehicle in old Subway"
         )
         AlertDialog(
             onDismissRequest = onDismiss,
-            title = { Text("Select Status (status_gt)") },
+            title = { Text("Select Status") },
             text = {
                 Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                     statusOptions.forEach { status ->
