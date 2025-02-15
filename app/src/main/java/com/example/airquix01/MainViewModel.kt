@@ -3,6 +3,7 @@ package com.example.airquix01
 import android.util.Log
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.lifecycle.ViewModel
 import com.google.android.gms.location.DetectedActivity
 import java.io.File
@@ -59,6 +60,9 @@ class MainViewModel : ViewModel() {
 
     // NEU: Neuer State für den manuell ausgewählten Status (wird im CSV-Log berücksichtigt)
     val currentStatusGt = mutableStateOf("Unknown")
+
+    // NEU: Aktuell erfasstes Bild, das in der TopBar angezeigt werden soll
+    val currentCapturedImage = mutableStateOf<ImageBitmap?>(null)
 
     // -------------------------------------------
     // B) Logs und CSV-Handling

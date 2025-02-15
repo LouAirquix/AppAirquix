@@ -23,6 +23,7 @@ import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import androidx.exifinterface.media.ExifInterface
@@ -339,6 +340,12 @@ class LoggingService : LifecycleService() {
         )
     }
 
+    /**
+     * Verarbeitet das aufgenommene Bild:
+     * - Dekodiert das Bild, korrigiert die Ausrichtung.
+     * - Aktualisiert den ViewModel-State currentCapturedImage (für die UI).
+     * - Führt Klassifikationen durch.
+     */
     private fun processCapturedImage(photoFile: File) {
         var bitmap = BitmapFactory.decodeFile(photoFile.absolutePath)
         if (bitmap != null) {
@@ -355,6 +362,12 @@ class LoggingService : LifecycleService() {
                 Log.e("LoggingService", "Error correcting image orientation: ${e.message}")
             }
         }
+        // Aktualisiere den ViewModel-State für das aktuelle Bild (für die TopBar)
+        if (bitmap != null) {
+            viewModel.currentCapturedImage.value = bitmap.asImageBitmap()
+        }
+
+        // Klassifikation mit dem Places365-Modell
         if (bitmap != null && classificationModel != null && classificationCategories.isNotEmpty()) {
             Log.d("LoggingService", "Image processed. Bitmap size: ${bitmap.width} x ${bitmap.height}")
             serviceScope.launch(Dispatchers.Default) {
@@ -376,7 +389,7 @@ class LoggingService : LifecycleService() {
         } else {
             Log.e("LoggingService", "Failed to decode captured image or model/categories not loaded.")
         }
-        // NEU: Klassifikation mit dem neuen TFLite-Modell
+        // Klassifikation mit dem neuen TFLite-Modell
         if (bitmap != null && newModelInterpreter != null && ::newModelLabels.isInitialized) {
             val (newLabel, newConfidence) = classifyNewModel(bitmap)
             viewModel.currentNewModelOutput.value = Pair(newLabel, newConfidence)

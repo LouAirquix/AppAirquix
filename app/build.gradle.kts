@@ -86,6 +86,9 @@ dependencies {
     implementation("org.pytorch:pytorch_android:1.13.1")
     implementation("org.pytorch:pytorch_android_torchvision:1.13.1")
 
+    implementation("androidx.compose.material:material-icons-core:1.5.4")
+    implementation("androidx.compose.material:material-icons-extended:1.5.4")
+
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
