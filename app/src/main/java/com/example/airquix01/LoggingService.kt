@@ -94,7 +94,7 @@ class LoggingService : LifecycleService() {
         305, 308, 310, 311, 312, 313, 314, 315, 316, 317, 318, 319, 320, 321, 323, 324, 325, 326, 327,
         328, 329, 330, 331, 352, 354, 355, 357, 358, 359, 378, 380, 500, 501, 502, 503, 504, 508, 517, 519, 520
     )
-    private val excludedLabels = setOf("medina", "kasbah", "desert")
+    private val excludedLabels = setOf("medina", "kasbah")
 
     // NEU: Variablen für das neue TFLite-Modell
     private var newModelInterpreter: Interpreter? = null
@@ -288,7 +288,7 @@ class LoggingService : LifecycleService() {
             }
             imageCapture = ImageCapture.Builder()
                 .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
-                .setTargetResolution(Size(1920, 1080))
+                .setTargetResolution(Size(1080, 1920))
                 .build()
             val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
             try {
