@@ -144,11 +144,13 @@ class LoggingService : LifecycleService() {
         cameraProvider?.unbindAll()
         cameraExecutor.shutdown()
         newModelInterpreter?.close()
+        newModelInterpreter = null
         stopLocationUpdates()
         stopActivityRecognition()
         stopYamNet()
         stopVehicleClassification()
     }
+
 
     override fun onBind(intent: Intent): IBinder? {
         super.onBind(intent)
@@ -539,16 +541,26 @@ class LoggingService : LifecycleService() {
 
     // ---------------- NEU: Klassifikation mit dem neuen TFLite-Modell ----------------
     private fun classifyNewModel(bitmap: Bitmap): Pair<String, Float> {
-        val resizedBitmap = Bitmap.createScaledBitmap(bitmap, newModelInputSize, newModelInputSize, false)
-        val inputBuffer = convertBitmapToByteBuffer(resizedBitmap)
-        val output = Array(1) { FloatArray(newModelLabels.size) }
-        newModelInterpreter?.run(inputBuffer, output)
-        val probabilities = softmax(output[0])
-        val maxIndex = probabilities.indices.maxByOrNull { probabilities[it] } ?: -1
-        val label = if (maxIndex != -1) newModelLabels[maxIndex] else "Unknown"
-        val confidence = if (maxIndex != -1) probabilities[maxIndex] else 0f
-        return Pair(label, confidence)
+        // Wenn der Interpreter null ist, wurde er bereits geschlossen.
+        val interpreter = newModelInterpreter ?: return Pair("Unknown", 0f)
+
+        return try {
+            val resizedBitmap = Bitmap.createScaledBitmap(bitmap, newModelInputSize, newModelInputSize, false)
+            val inputBuffer = convertBitmapToByteBuffer(resizedBitmap)
+            val output = Array(1) { FloatArray(newModelLabels.size) }
+            // Führe die Klassifikation aus
+            interpreter.run(inputBuffer, output)
+            val probabilities = softmax(output[0])
+            val maxIndex = probabilities.indices.maxByOrNull { probabilities[it] } ?: -1
+            val label = if (maxIndex != -1) newModelLabels[maxIndex] else "Unknown"
+            val confidence = if (maxIndex != -1) probabilities[maxIndex] else 0f
+            Pair(label, confidence)
+        } catch (e: IllegalStateException) {
+            Log.e("LoggingService", "TFLite Interpreter already closed", e)
+            Pair("Unknown", 0f)
+        }
     }
+
 
     // NEU: Neue Funktion, um Top-3 Ergebnisse (Label + Confidence) vom neuen Modell zu ermitteln
     private fun classifyNewModelMulti(bitmap: Bitmap): List<MainViewModel.LabelConfidence> {
