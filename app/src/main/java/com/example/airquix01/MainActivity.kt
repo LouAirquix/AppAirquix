@@ -4,8 +4,11 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.AudioDeviceInfo
+import android.media.AudioManager
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -42,6 +45,42 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.example.airquix01.ui.theme.MymlkitappTheme
+
+/**
+ * Hilfsklasse, die mittels AudioManager versucht, das Bluetooth-Mikro zu verwenden,
+ * sofern eines als Input verfügbar ist.
+ */
+class AudioRoutingHelper(private val context: Context) {
+    private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+
+    fun routeAudioToBluetoothIfAvailable() {
+        // Hole alle Eingabegeräte
+        val inputDevices = audioManager.getDevices(AudioManager.GET_DEVICES_INPUTS)
+        // Prüfe, ob ein Gerät vom Typ Bluetooth SCO (Headset) angeschlossen ist
+        val bluetoothDeviceConnected = inputDevices.any { device ->
+            device.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO
+        }
+        if (bluetoothDeviceConnected) {
+            // Setze den Audio-Modus auf Kommunikationsmodus
+            audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
+            // Starte SCO, sodass das Bluetooth-Mikro genutzt wird
+            audioManager.startBluetoothSco()
+            audioManager.isBluetoothScoOn = true
+            Log.d("AudioRoutingHelper", "Bluetooth SCO gestartet: Bluetooth-Mikro wird verwendet.")
+        } else {
+            Log.d("AudioRoutingHelper", "Kein Bluetooth-Mikro gefunden – Standard-Audiogerät wird verwendet.")
+        }
+    }
+
+    fun stopBluetoothRouting() {
+        if (audioManager.isBluetoothScoOn) {
+            audioManager.stopBluetoothSco()
+            audioManager.isBluetoothScoOn = false
+            audioManager.mode = AudioManager.MODE_NORMAL
+            Log.d("AudioRoutingHelper", "Bluetooth SCO gestoppt.")
+        }
+    }
+}
 
 class MainActivity : ComponentActivity() {
 
@@ -105,10 +144,17 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private lateinit var audioRoutingHelper: AudioRoutingHelper
+
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         checkAndRequestPermissions()
+
+        // AudioRoutingHelper initialisieren und versuchen, das Bluetooth-Mikro zu nutzen
+        audioRoutingHelper = AudioRoutingHelper(this)
+        audioRoutingHelper.routeAudioToBluetoothIfAvailable()
+
         setContent {
             MymlkitappTheme {
                 val context = LocalContext.current
@@ -117,8 +163,8 @@ class MainActivity : ComponentActivity() {
                 val viewModel = app.getMainViewModel()
 
                 var showReadMe by remember { mutableStateOf(false) }
-                var showStatusDialog by remember { mutableStateOf(false) }  // für Status-Auswahl
-                var showImageDialog by remember { mutableStateOf(false) }   // für Bildanzeige
+                var showStatusDialog by remember { mutableStateOf(false) }
+                var showImageDialog by remember { mutableStateOf(false) }
 
                 Scaffold(
                     topBar = {
@@ -173,6 +219,8 @@ class MainActivity : ComponentActivity() {
     private fun stopLoggingService() {
         val intent = Intent(this, LoggingService::class.java)
         stopService(intent)
+        // Stoppe ggf. das Bluetooth-Audio-Routing, wenn der Service beendet wird
+        audioRoutingHelper.stopBluetoothRouting()
     }
 
     private fun shareLogsCsv() {
@@ -203,7 +251,6 @@ fun MyTopBar(
     onImageButtonClick: () -> Unit,
     currentCapturedImage: ImageBitmap?
 ) {
-    // Das Icon soll immer gleich bleiben, daher wird hier immer Icons.Filled.Image angezeigt
     SmallTopAppBar(
         title = { Text("AirquixApp - LMU", fontSize = 18.sp) },
         actions = {
